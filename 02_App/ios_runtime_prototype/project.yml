@@ -8,6 +8,10 @@ targets:
     platform: iOS
     sources:
       - LoopyCatRuntimePrototype
+    resources:
+      - ../../03_AR/canonical_marker.jpg
+      - ../../04_Content/Bosses/raw_sheets
+      - ../../04_Content/Loot/raw_sheets
     info:
       path: LoopyCatRuntimePrototype/Info.plist
       properties:
