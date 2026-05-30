@@ -1,0 +1,193 @@
+name: TestFlight Status
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: App version to inspect
+        required: true
+        default: "1.0"
+      build_number:
+        description: Build number to inspect
+        required: true
+        default: "1"
+
+jobs:
+  status:
+    name: Inspect TestFlight build status
+    runs-on: ubuntu-latest
+    env:
+      APP_IDENTIFIER: ${{ secrets.APP_IDENTIFIER }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+      APP_VERSION: ${{ inputs.app_version }}
+      BUILD_NUMBER: ${{ inputs.build_number }}
+    steps:
+      - name: Query App Store Connect
+        run: |
+          ruby <<'RUBY'
+          require "base64"
+          require "json"
+          require "net/http"
+          require "openssl"
+          require "time"
+          require "uri"
+
+          REQUIRED = %w[
+            APP_IDENTIFIER
+            ASC_KEY_ID
+            ASC_ISSUER_ID
+            ASC_PRIVATE_KEY
+            APP_VERSION
+            BUILD_NUMBER
+          ]
+          missing = REQUIRED.select { |key| ENV[key].to_s.strip.empty? }
+          abort("Missing required environment variables: #{missing.join(", ")}") unless missing.empty?
+
+          def base64url(data)
+            Base64.urlsafe_encode64(data).delete("=")
+          end
+
+          def app_store_connect_token
+            key_content = ENV.fetch("ASC_PRIVATE_KEY").strip.gsub("\\n", "\n")
+            private_key = OpenSSL::PKey.read(key_content)
+            header = {
+              alg: "ES256",
+              kid: ENV.fetch("ASC_KEY_ID"),
+              typ: "JWT"
+            }
+            payload = {
+              iss: ENV.fetch("ASC_ISSUER_ID"),
+              exp: Time.now.to_i + 1200,
+              aud: "appstoreconnect-v1"
+            }
+            signing_input = [
+              base64url(JSON.generate(header)),
+              base64url(JSON.generate(payload))
+            ].join(".")
+            der_signature = private_key.dsa_sign_asn1(OpenSSL::Digest::SHA256.digest(signing_input))
+            signature_values = OpenSSL::ASN1.decode(der_signature).value.map(&:value)
+            raw_signature = signature_values.map { |value| value.to_s(2).rjust(32, "\0")[-32, 32] }.join
+
+            "#{signing_input}.#{base64url(raw_signature)}"
+          end
+
+          TOKEN = app_store_connect_token
+          API_ROOT = "https://api.appstoreconnect.apple.com"
+
+          def request(path, query = {})
+            uri = URI("#{API_ROOT}#{path}")
+            uri.query = URI.encode_www_form(query) unless query.empty?
+            response = Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+              req = Net::HTTP::Get.new(uri)
+              req["Authorization"] = "Bearer #{TOKEN}"
+              req["Content-Type"] = "application/json"
+              http.request(req)
+            end
+
+            body = response.body.to_s.empty? ? {} : JSON.parse(response.body)
+            unless response.is_a?(Net::HTTPSuccess)
+              warn JSON.pretty_generate(body)
+              abort("App Store Connect API request failed: #{response.code} #{response.message} #{uri}")
+            end
+            body
+          end
+
+          def optional_request(path, query = {})
+            request(path, query)
+          rescue SystemExit
+            raise
+          rescue => error
+            { "error" => error.message }
+          end
+
+          apps = request("/v1/apps", {
+            "filter[bundleId]" => ENV.fetch("APP_IDENTIFIER"),
+            "fields[apps]" => "name,bundleId",
+            "limit" => "1"
+          })
+          app = apps.fetch("data").first
+          abort("No App Store Connect app found for bundle ID #{ENV.fetch("APP_IDENTIFIER")}") unless app
+
+          builds = request("/v1/builds", {
+            "filter[app]" => app.fetch("id"),
+            "filter[preReleaseVersion.version]" => ENV.fetch("APP_VERSION"),
+            "filter[version]" => ENV.fetch("BUILD_NUMBER"),
+            "fields[builds]" => "version,uploadedDate,expirationDate,expired,minOsVersion,processingState,buildAudienceType,usesNonExemptEncryption",
+            "include" => "preReleaseVersion",
+            "limit" => "1",
+            "sort" => "-uploadedDate"
+          })
+          build = builds.fetch("data").first
+          abort("No build found for #{ENV.fetch("APP_VERSION")} (#{ENV.fetch("BUILD_NUMBER")})") unless build
+
+          build_id = build.fetch("id")
+          beta_detail = optional_request("/v1/builds/#{build_id}/buildBetaDetail", {
+            "fields[buildBetaDetails]" => "autoNotifyEnabled,internalBuildState,externalBuildState"
+          })
+          beta_groups = optional_request("/v1/builds/#{build_id}/betaGroups", {
+            "fields[betaGroups]" => "name,isInternalGroup,hasAccessToAllBuilds,publicLinkEnabled,publicLink",
+            "limit" => "200"
+          })
+          individual_testers = optional_request("/v1/builds/#{build_id}/individualTesters", {
+            "limit" => "1"
+          })
+
+          groups = beta_groups.fetch("data", [])
+          internal_groups = groups.select { |group| group.dig("attributes", "isInternalGroup") }
+          external_groups = groups.reject { |group| group.dig("attributes", "isInternalGroup") }
+          individual_count = individual_testers.dig("meta", "paging", "total")
+
+          build_attrs = build.fetch("attributes")
+          beta_attrs = beta_detail.dig("data", "attributes") || {}
+
+          status = {
+            app: app.fetch("attributes"),
+            build: {
+              id: build_id,
+              app_version: ENV.fetch("APP_VERSION"),
+              build_number: build_attrs["version"],
+              uploaded_date: build_attrs["uploadedDate"],
+              processing_state: build_attrs["processingState"],
+              build_audience_type: build_attrs["buildAudienceType"],
+              expired: build_attrs["expired"],
+              expiration_date: build_attrs["expirationDate"],
+              uses_non_exempt_encryption: build_attrs["usesNonExemptEncryption"]
+            },
+            beta_detail: beta_attrs,
+            assigned_internal_groups: internal_groups.map { |group| group.fetch("attributes").slice("name", "isInternalGroup", "hasAccessToAllBuilds") },
+            assigned_external_groups: external_groups.map { |group| group.fetch("attributes").slice("name", "isInternalGroup", "hasAccessToAllBuilds", "publicLinkEnabled", "publicLink") },
+            individually_assigned_tester_count: individual_count
+          }
+
+          puts "TESTFLIGHT_STATUS_JSON_BEGIN"
+          puts JSON.pretty_generate(status)
+          puts "TESTFLIGHT_STATUS_JSON_END"
+
+          manual_actions = []
+          processing_state = build_attrs["processingState"].to_s
+          internal_state = beta_attrs["internalBuildState"].to_s
+          external_state = beta_attrs["externalBuildState"].to_s
+          encryption = build_attrs["usesNonExemptEncryption"]
+
+          if processing_state.empty? || !%w[VALID].include?(processing_state)
+            manual_actions << "Wait for processing to become VALID, or open App Store Connect build processing errors if it is FAILED/INVALID."
+          end
+
+          if [internal_state, external_state].any? { |state| state.include?("MISSING_EXPORT_COMPLIANCE") } || encryption.nil?
+            manual_actions << "Complete Export Compliance for build #{ENV.fetch("APP_VERSION")} (#{ENV.fetch("BUILD_NUMBER")}) in App Store Connect."
+          end
+
+          if internal_groups.empty? && individual_count.to_i.zero? && !internal_state.include?("IN_BETA_TESTING")
+            manual_actions << "Add build #{ENV.fetch("APP_VERSION")} (#{ENV.fetch("BUILD_NUMBER")}) to an internal TestFlight tester group, or assign internal testers individually."
+          end
+
+          puts "MANUAL_ACTIONS_BEGIN"
+          if manual_actions.empty?
+            puts "None detected by App Store Connect API."
+          else
+            manual_actions.each { |action| puts "- #{action}" }
+          end
+          puts "MANUAL_ACTIONS_END"
+          RUBY
