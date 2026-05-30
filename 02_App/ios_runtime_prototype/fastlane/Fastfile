@@ -60,112 +60,115 @@ platform :ios do
     keychain_name = "loopycat-ci-#{SecureRandom.hex(8)}"
     keychain_path = File.expand_path("~/Library/Keychains/#{keychain_name}-db")
     keychain_password = SecureRandom.hex(32)
+    project_root = File.expand_path("..", __dir__)
 
-    sh("xcodegen generate")
-    verify_info_plist_orientations(source_info_plist, "source Info.plist after xcodegen generate")
+    Dir.chdir(project_root) do
+      sh("xcodegen generate")
+      verify_info_plist_orientations(source_info_plist, "source Info.plist after xcodegen generate")
 
-    api_key = app_store_connect_api_key(asc_api_key_options)
+      api_key = app_store_connect_api_key(asc_api_key_options)
 
-    begin
-      create_keychain(
-        name: keychain_name,
-        password: keychain_password,
-        default_keychain: true,
-        unlock: true,
-        timeout: 3600,
-        lock_when_sleeps: false
-      )
+      begin
+        create_keychain(
+          name: keychain_name,
+          password: keychain_password,
+          default_keychain: true,
+          unlock: true,
+          timeout: 3600,
+          lock_when_sleeps: false
+        )
 
-      get_certificates(
-        api_key: api_key,
-        team_id: team_id,
-        development: false,
-        generate_apple_certs: true,
-        force: true,
-        keychain_path: keychain_path,
-        keychain_password: keychain_password
-      )
+        get_certificates(
+          api_key: api_key,
+          team_id: team_id,
+          development: false,
+          generate_apple_certs: true,
+          force: true,
+          keychain_path: keychain_path,
+          keychain_password: keychain_password
+        )
 
-      profile_path = get_provisioning_profile(
-        api_key: api_key,
-        team_id: team_id,
-        app_identifier: app_identifier,
-        provisioning_name: profile_name,
-        output_path: profile_directory,
-        filename: "#{app_identifier}.appstore.mobileprovision",
-        skip_install: false,
-        development: false,
-        adhoc: false,
-        force: true
-      )
+        profile_path = get_provisioning_profile(
+          api_key: api_key,
+          team_id: team_id,
+          app_identifier: app_identifier,
+          provisioning_name: profile_name,
+          output_path: profile_directory,
+          filename: "#{app_identifier}.appstore.mobileprovision",
+          skip_install: false,
+          development: false,
+          adhoc: false,
+          force: true
+        )
 
-      profile = FastlaneCore::ProvisioningProfile.parse(profile_path)
-      resolved_profile_name = profile["Name"] || profile_name
+        profile = FastlaneCore::ProvisioningProfile.parse(profile_path)
+        resolved_profile_name = profile["Name"] || profile_name
 
-      update_code_signing_settings(
-        use_automatic_signing: false,
-        path: project_path,
-        team_id: team_id,
-        targets: [scheme],
-        bundle_identifier: app_identifier,
-        profile_name: resolved_profile_name,
-        code_sign_identity: "Apple Distribution"
-      )
+        update_code_signing_settings(
+          use_automatic_signing: false,
+          path: project_path,
+          team_id: team_id,
+          targets: [scheme],
+          bundle_identifier: app_identifier,
+          profile_name: resolved_profile_name,
+          code_sign_identity: "Apple Distribution"
+        )
 
-      latest_build = latest_testflight_build_number(
-        api_key: api_key,
-        app_identifier: app_identifier,
-        initial_build_number: 0
-      )
-      next_build = latest_build + 1
+        latest_build = latest_testflight_build_number(
+          api_key: api_key,
+          app_identifier: app_identifier,
+          initial_build_number: 0
+        )
+        next_build = latest_build + 1
 
-      increment_build_number(
-        build_number: next_build.to_s,
-        xcodeproj: project_path
-      )
+        increment_build_number(
+          build_number: next_build.to_s,
+          xcodeproj: project_path
+        )
 
-      xcargs = [
-        "PRODUCT_BUNDLE_IDENTIFIER=#{app_identifier.shellescape}",
-        "DEVELOPMENT_TEAM=#{team_id.shellescape}",
-        "CODE_SIGN_STYLE=Manual",
-        "CODE_SIGN_IDENTITY=#{'Apple Distribution'.shellescape}",
-        "PROVISIONING_PROFILE_SPECIFIER=#{resolved_profile_name.shellescape}"
-      ]
+        xcargs = [
+          "PRODUCT_BUNDLE_IDENTIFIER=#{app_identifier.shellescape}",
+          "DEVELOPMENT_TEAM=#{team_id.shellescape}",
+          "CODE_SIGN_STYLE=Manual",
+          "CODE_SIGN_IDENTITY=#{'Apple Distribution'.shellescape}",
+          "PROVISIONING_PROFILE_SPECIFIER=#{resolved_profile_name.shellescape}"
+        ]
 
-      build_app(
-        project: project_path,
-        scheme: scheme,
-        clean: true,
-        destination: "generic/platform=iOS",
-        export_method: "app-store",
-        export_options: {
-          method: "app-store",
-          signingStyle: "manual",
-          teamID: team_id,
-          provisioningProfiles: {
-            app_identifier => resolved_profile_name
-          }
-        },
-        xcargs: xcargs.join(" "),
-        output_directory: output_directory,
-        output_name: output_name
-      )
-      verify_ipa_info_plist_orientations(File.join(output_directory, output_name))
+        build_app(
+          project: project_path,
+          scheme: scheme,
+          clean: true,
+          destination: "generic/platform=iOS",
+          export_method: "app-store",
+          export_options: {
+            method: "app-store",
+            signingStyle: "manual",
+            teamID: team_id,
+            provisioningProfiles: {
+              app_identifier => resolved_profile_name
+            }
+          },
+          xcargs: xcargs.join(" "),
+          output_directory: output_directory,
+          output_name: output_name
+        )
+        verify_ipa_info_plist_orientations(File.join(output_directory, output_name))
 
-      groups = ENV["TESTFLIGHT_GROUPS"].to_s.split(",").map(&:strip).reject(&:empty?)
+        groups = ENV["TESTFLIGHT_GROUPS"].to_s.split(",").map(&:strip).reject(&:empty?)
 
-      upload_options = {
-        api_key: api_key,
-        app_identifier: app_identifier,
-        ipa: File.join(output_directory, output_name),
-        skip_waiting_for_build_processing: groups.empty?,
-        changelog: ENV.fetch("TESTFLIGHT_CHANGELOG", "PHOTO composition prototype build")
-      }
-      upload_options[:groups] = groups unless groups.empty?
+        upload_options = {
+          api_key: api_key,
+          app_identifier: app_identifier,
+          ipa: File.join(output_directory, output_name),
+          skip_waiting_for_build_processing: groups.empty?,
+          changelog: ENV.fetch("TESTFLIGHT_CHANGELOG", "PHOTO composition prototype build")
+        }
+        upload_options[:groups] = groups unless groups.empty?
 
-      upload_to_testflight(upload_options)
-    ensure
-      delete_keychain(name: keychain_name) if keychain_name
+        upload_to_testflight(upload_options)
+      ensure
+        delete_keychain(name: keychain_name) if keychain_name
+      end
     end
   end
 
