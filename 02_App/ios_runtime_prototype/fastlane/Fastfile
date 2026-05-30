@@ -33,6 +33,13 @@ def verify_info_plist_orientations(plist_path, label)
   UI.message("Verified required orientations in #{label}.")
 end
 
+def verify_info_plist_launch_screen(plist_path, label)
+  launch_storyboard = sh("/usr/libexec/PlistBuddy -c #{Shellwords.escape("Print :UILaunchStoryboardName")} #{Shellwords.escape(plist_path)}", log: false).strip
+  UI.user_error!("#{label} must include UILaunchStoryboardName=LaunchScreen for App Store upload.") unless launch_storyboard == "LaunchScreen"
+
+  UI.message("Verified launch storyboard in #{label}.")
+end
+
 def verify_ipa_info_plist_orientations(ipa_path)
   Dir.mktmpdir("loopycat-ipa") do |tmpdir|
     sh("unzip -q #{Shellwords.escape(ipa_path)} -d #{Shellwords.escape(tmpdir)}")
@@ -40,6 +47,7 @@ def verify_ipa_info_plist_orientations(ipa_path)
     UI.user_error!("Could not find packaged app Info.plist in #{ipa_path}") if app_info_plists.empty?
 
     verify_info_plist_orientations(app_info_plists.first, "packaged app Info.plist")
+    verify_info_plist_launch_screen(app_info_plists.first, "packaged app Info.plist")
   end
 end
 
@@ -73,6 +81,7 @@ platform :ios do
     Dir.chdir(project_root) do
       sh("xcodegen generate")
       verify_info_plist_orientations(source_info_plist_absolute, "source Info.plist after xcodegen generate")
+      verify_info_plist_launch_screen(source_info_plist_absolute, "source Info.plist after xcodegen generate")
 
       api_key = app_store_connect_api_key(asc_api_key_options)
 

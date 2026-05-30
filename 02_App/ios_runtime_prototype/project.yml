@@ -11,6 +11,11 @@ targets:
     info:
       path: LoopyCatRuntimePrototype/Info.plist
       properties:
+        CFBundleDisplayName: LoopyCat Runtime Prototype
+        CFBundleIconName: AppIcon
+        NSCameraUsageDescription: LoopyCat RPG AR needs camera access to test camera battle composition.
+        NSPhotoLibraryAddUsageDescription: LoopyCat RPG AR saves composed battle photos to Photos.
+        UILaunchStoryboardName: LaunchScreen
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
