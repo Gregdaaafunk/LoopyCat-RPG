@@ -1,0 +1,54 @@
+name: TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  beta:
+    name: Upload LoopyCatRuntimePrototype to TestFlight
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: 02_App/ios_runtime_prototype
+    env:
+      APP_IDENTIFIER: ${{ secrets.APP_IDENTIFIER }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+      ASC_TEAM_ID: ${{ secrets.ASC_TEAM_ID }}
+      TESTFLIGHT_GROUPS: ${{ vars.TESTFLIGHT_GROUPS }}
+      TESTFLIGHT_CHANGELOG: ${{ vars.TESTFLIGHT_CHANGELOG }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          XCODE_PATH=""
+          for candidate in $(find /Applications -maxdepth 1 \( -name 'Xcode_26*.app' -o -name 'Xcode.app' \) -print | sort -r); do
+            version="$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | awk '/^Xcode / { print $2 }')"
+            if [[ "$version" == 26* ]]; then
+              XCODE_PATH="$candidate"
+              break
+            fi
+          done
+          if [ -z "$XCODE_PATH" ]; then
+            echo "Xcode 26 is not installed on this runner. App Store Connect upload requires the iOS 26 SDK."
+            echo "Available Xcode installations:"
+            find /Applications -maxdepth 1 -name 'Xcode*.app' -print | sort || true
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Install Ruby gems
+        run: bundle install
+
+      - name: Build and upload
+        run: bundle exec fastlane ios beta

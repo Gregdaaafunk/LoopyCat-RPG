@@ -1,0 +1,27 @@
+name: LoopyCatRuntimePrototype
+options:
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  LoopyCatRuntimePrototype:
+    type: application
+    platform: iOS
+    sources:
+      - LoopyCatRuntimePrototype
+    info:
+      path: LoopyCatRuntimePrototype/Info.plist
+      properties:
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.loopycat.runtimeprototype
+      MARKETING_VERSION: 0.1.0
+      CURRENT_PROJECT_VERSION: 1
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
