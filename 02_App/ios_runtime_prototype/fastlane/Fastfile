@@ -88,18 +88,29 @@ platform :ios do
 
         certificate_base64 = ENV["IOS_DISTRIBUTION_CERTIFICATE_BASE64"].to_s.strip
         certificate_password = ENV["IOS_DISTRIBUTION_CERTIFICATE_PASSWORD"].to_s
-        UI.user_error!("Missing required GitHub secret: IOS_DISTRIBUTION_CERTIFICATE_BASE64") if certificate_base64.empty?
-        UI.user_error!("Missing required GitHub secret: IOS_DISTRIBUTION_CERTIFICATE_PASSWORD") if certificate_password.empty?
+        if certificate_base64.empty?
+          get_certificates(
+            api_key: api_key,
+            team_id: team_id,
+            development: false,
+            generate_apple_certs: true,
+            force: true,
+            keychain_path: keychain_path,
+            keychain_password: keychain_password
+          )
+        else
+          UI.user_error!("Missing required GitHub secret: IOS_DISTRIBUTION_CERTIFICATE_PASSWORD") if certificate_password.empty?
 
-        FileUtils.mkdir_p(signing_directory)
-        File.binwrite(certificate_path, Base64.decode64(certificate_base64))
+          FileUtils.mkdir_p(signing_directory)
+          File.binwrite(certificate_path, Base64.decode64(certificate_base64))
 
-        import_certificate(
-          certificate_path: certificate_path,
-          certificate_password: certificate_password,
-          keychain_name: keychain_name,
-          keychain_password: keychain_password
-        )
+          import_certificate(
+            certificate_path: certificate_path,
+            certificate_password: certificate_password,
+            keychain_name: keychain_name,
+            keychain_password: keychain_password
+          )
+        end
 
         get_provisioning_profile(
           api_key: api_key,
@@ -191,9 +202,7 @@ platform :ios do
       "APPLE_TEAM_ID",
       "APP_IDENTIFIER",
       "ASC_KEY_ID",
-      "ASC_ISSUER_ID",
-      "IOS_DISTRIBUTION_CERTIFICATE_BASE64",
-      "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD"
+      "ASC_ISSUER_ID"
     ]
 
     missing = required.select { |key| ENV[key].to_s.strip.empty? }
