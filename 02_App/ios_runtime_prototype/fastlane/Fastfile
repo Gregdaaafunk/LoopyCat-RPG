@@ -1,8 +1,10 @@
 require "shellwords"
 require "securerandom"
 require "tmpdir"
+require "time"
 require "base64"
 require "fileutils"
+require "spaceship"
 require "fastlane_core/provisioning_profile"
 
 def verify_info_plist_orientations(plist_path, label)
@@ -49,6 +51,54 @@ def verify_ipa_info_plist_orientations(ipa_path)
     verify_info_plist_orientations(app_info_plists.first, "packaged app Info.plist")
     verify_info_plist_launch_screen(app_info_plists.first, "packaged app Info.plist")
   end
+end
+
+def create_distribution_certificate(api_key, team_id, keychain_path, keychain_password, signing_directory)
+  get_certificates(
+    api_key: api_key,
+    team_id: team_id,
+    development: false,
+    generate_apple_certs: true,
+    force: true,
+    output_path: signing_directory,
+    keychain_path: keychain_path,
+    keychain_password: keychain_password
+  )
+rescue => error
+  raise unless error.message.include?("maximum number of available Distribution certificates")
+
+  revoke_newest_distribution_certificate
+
+  get_certificates(
+    api_key: api_key,
+    team_id: team_id,
+    development: false,
+    generate_apple_certs: true,
+    force: true,
+    output_path: signing_directory,
+    keychain_path: keychain_path,
+    keychain_password: keychain_password
+  )
+end
+
+def revoke_newest_distribution_certificate
+  distribution_types = [
+    "DISTRIBUTION",
+    "IOS_DISTRIBUTION"
+  ]
+  certificates = Spaceship::ConnectAPI::Certificate.all.select do |certificate|
+    distribution_types.include?(certificate.certificate_type) && certificate.valid?
+  end
+  UI.user_error!("Apple blocked certificate creation and no revokable Distribution certificate was found.") if certificates.empty?
+
+  certificate = certificates.max_by do |candidate|
+    [
+      Time.parse(candidate.expiration_date),
+      candidate.id
+    ]
+  end
+  UI.important("Revoking Distribution certificate #{certificate.id} (#{certificate.name || certificate.display_name}) to free a signing slot.")
+  certificate.delete!
 end
 
 default_platform(:ios)
@@ -98,15 +148,7 @@ platform :ios do
         certificate_base64 = ENV["IOS_DISTRIBUTION_CERTIFICATE_BASE64"].to_s.strip
         certificate_password = ENV["IOS_DISTRIBUTION_CERTIFICATE_PASSWORD"].to_s
         if certificate_base64.empty?
-          get_certificates(
-            api_key: api_key,
-            team_id: team_id,
-            development: false,
-            generate_apple_certs: true,
-            force: true,
-            keychain_path: keychain_path,
-            keychain_password: keychain_password
-          )
+          create_distribution_certificate(api_key, team_id, keychain_path, keychain_password, signing_directory)
         else
           UI.user_error!("Missing required GitHub secret: IOS_DISTRIBUTION_CERTIFICATE_PASSWORD") if certificate_password.empty?
 
