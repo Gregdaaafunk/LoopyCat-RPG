@@ -88,7 +88,7 @@ platform :ios do
           keychain_password: keychain_password
         )
 
-        profile_path = get_provisioning_profile(
+        get_provisioning_profile(
           api_key: api_key,
           team_id: team_id,
           app_identifier: app_identifier,
@@ -98,6 +98,9 @@ platform :ios do
           skip_install: false,
           force: true
         )
+
+        profile_path = Actions.lane_context[SharedValues::SIGH_PROFILE_PATH]
+        UI.user_error!("Could not resolve generated provisioning profile path.") if profile_path.to_s.empty?
 
         profile = FastlaneCore::ProvisioningProfile.parse(profile_path)
         resolved_profile_name = profile["Name"] || profile_name
