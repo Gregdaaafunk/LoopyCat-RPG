@@ -59,7 +59,7 @@ def create_distribution_certificate(api_key, team_id, keychain_path, keychain_pa
     team_id: team_id,
     development: false,
     generate_apple_certs: true,
-    force: true,
+    force: false,
     output_path: signing_directory,
     keychain_path: keychain_path,
     keychain_password: keychain_password
@@ -74,7 +74,7 @@ rescue => error
     team_id: team_id,
     development: false,
     generate_apple_certs: true,
-    force: true,
+    force: false,
     output_path: signing_directory,
     keychain_path: keychain_path,
     keychain_password: keychain_password
@@ -84,7 +84,8 @@ end
 def revoke_newest_distribution_certificate
   distribution_types = [
     "DISTRIBUTION",
-    "IOS_DISTRIBUTION"
+    "IOS_DISTRIBUTION",
+    "APPLE_DISTRIBUTION"
   ]
   certificates = Spaceship::ConnectAPI::Certificate.all.select do |certificate|
     distribution_types.include?(certificate.certificate_type) && certificate.valid?
@@ -99,6 +100,7 @@ def revoke_newest_distribution_certificate
   end
   UI.important("Revoking Distribution certificate #{certificate.id} (#{certificate.name || certificate.display_name}) to free a signing slot.")
   certificate.delete!
+  sleep(5)
 end
 
 default_platform(:ios)
