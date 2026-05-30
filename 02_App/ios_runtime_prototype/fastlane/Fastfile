@@ -96,8 +96,6 @@ platform :ios do
           output_path: profile_directory,
           filename: "#{app_identifier}.appstore.mobileprovision",
           skip_install: false,
-          development: false,
-          adhoc: false,
           force: true
         )
 
