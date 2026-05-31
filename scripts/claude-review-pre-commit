@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+report_path="${CLAUDE_REVIEW_REPORT:-CLAUDE_REVIEW.md}"
+
+if [ "${CLAUDE_REVIEW_BYPASS:-}" = "1" ]; then
+  echo "CLAUDE_REVIEW_BYPASS=1 set; skipping Claude review gate." >&2
+  exit 0
+fi
+
+if git diff --cached --quiet --ignore-submodules --; then
+  exit 0
+fi
+
+if [ ! -f "$report_path" ]; then
+  echo "Claude review gate blocked commit: missing $report_path." >&2
+  echo "Run scripts/claude-review.sh and commit only after APPROVED." >&2
+  exit 1
+fi
+
+status="$(sed -n '1p' "$report_path" | tr -d '\r')"
+if [ "$status" != "APPROVED" ]; then
+  echo "Claude review gate blocked commit: $report_path status is '$status', not APPROVED." >&2
+  exit 1
+fi
+
+newest_change_epoch="$(
+  {
+    git diff --cached --name-only --diff-filter=ACMR -- .
+    git diff --name-only --diff-filter=ACMR -- .
+    git ls-files --others --exclude-standard
+  } | while IFS= read -r file; do
+    [ -n "$file" ] && [ -e "$file" ] && stat -c '%Y' "$file"
+  done | sort -nr | sed -n '1p'
+)"
+
+if [ -n "$newest_change_epoch" ]; then
+  report_epoch="$(stat -c '%Y' "$report_path")"
+  if [ "$report_epoch" -lt "$newest_change_epoch" ]; then
+    echo "Claude review gate blocked commit: $report_path is older than local changes." >&2
+    echo "Re-run scripts/claude-review.sh after your latest edits." >&2
+    exit 1
+  fi
+fi
+
+echo "Claude review gate: APPROVED."

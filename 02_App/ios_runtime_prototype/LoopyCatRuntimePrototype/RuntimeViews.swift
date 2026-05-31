@@ -4,24 +4,22 @@ import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var runtime: RuntimeSessionViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        ZStack {
-            screen
-
-            if runtime.debugOverlayEnabled {
-                RuntimeDebugOverlayView(runtime: runtime)
-                    .padding(.top, 44)
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-        }
+        screen
         .background(Color.black)
         .sheet(isPresented: $runtime.showReportSheet) {
             DiagnosticsReportSheet(runtime: runtime)
         }
+        .sheet(isPresented: $runtime.showLastSessionReportSheet) {
+            LastSessionReportSheet(runtime: runtime)
+        }
         .onAppear {
             runtime.start()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            runtime.scenePhaseChanged(phase)
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             runtime.updateDeviceOrientation()
@@ -209,71 +207,106 @@ struct CatHubView: View {
     @ObservedObject var runtime: RuntimeSessionViewModel
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                LinearGradient(colors: [.black, .indigo.opacity(0.8), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .ignoresSafeArea()
+        ZStack {
+            LinearGradient(colors: [.black, .indigo.opacity(0.72), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
 
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 14) {
-                        CatHeroCardView(runtime: runtime, expanded: true)
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("FIGHT HUB")
-                                .font(.largeTitle.bold())
-                                .foregroundStyle(.white)
-                            Text("Boss select, cat loadout, diagnostics, and the entry point to live AR battle.")
-                                .font(.headline)
-                                .foregroundStyle(.white.opacity(0.8))
-                            HStack(spacing: 8) {
-                                Button {
-                                    runtime.startFight()
-                                } label: {
-                                    Label("FIGHT", systemImage: "bolt.fill")
-                                        .buttonStyle(accent: .yellow)
-                                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    header
+                    CatHeroCardView(runtime: runtime, expanded: true)
+                    actionArea
+                    BossLobbyCard(runtime: runtime)
+                    InventorySummaryCard(runtime: runtime)
 
-                                Button {
-                                    runtime.requestReport()
-                                } label: {
-                                    Label("SHOW REPORT", systemImage: "doc.text.magnifyingglass")
-                                        .buttonStyle()
-                                }
-
-                                Button {
-                                    runtime.copyReportToPasteboard()
-                                } label: {
-                                    Label("COPY REPORT", systemImage: "doc.on.doc.fill")
-                                        .buttonStyle()
-                                }
-                            }
-                            HStack(spacing: 8) {
-                                Button {
-                                    runtime.toggleDebugOverlay()
-                                } label: {
-                                    Label(runtime.debugOverlayEnabled ? "DEBUG ON" : "DEBUG OFF", systemImage: "ladybug.fill")
-                                        .buttonStyle(accent: runtime.debugOverlayEnabled ? .green : .gray)
-                                }
-                                Button {
-                                    runtime.resetBattle()
-                                } label: {
-                                    Label("RESET", systemImage: "arrow.counterclockwise")
-                                        .buttonStyle(accent: .orange)
-                                }
-                            }
-                        }
-                        Spacer()
+                    if runtime.debugOverlayEnabled {
+                        RuntimeDebugPanelCard(runtime: runtime)
                     }
-
-                    HStack(alignment: .top, spacing: 14) {
-                        BossLobbyCard(runtime: runtime)
-                        InventorySummaryCard(runtime: runtime)
-                    }
-
-                    Spacer()
                 }
-                .padding(16)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 158)
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            bottomControls
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("LOOPYCAT")
+                .font(.title.bold())
+                .foregroundStyle(.white)
+            Text(runtime.debugOverlayEnabled ? "DEBUG MODE" : "FIGHT HUB")
+                .font(.caption.monospaced().bold())
+                .foregroundStyle(runtime.debugOverlayEnabled ? .green : .yellow)
+        }
+    }
+
+    private var actionArea: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("MAIN ACTION")
+                .font(.headline.bold())
+                .foregroundStyle(.white)
+            Text(runtime.battleMessage)
+                .font(.caption.monospaced().bold())
+                .foregroundStyle(.white.opacity(0.72))
+                .lineLimit(2)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var bottomControls: some View {
+        VStack(spacing: 10) {
+            Button {
+                runtime.startFight()
+            } label: {
+                Label("FIGHT", systemImage: "bolt.fill")
+                    .font(.headline.monospaced().bold())
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .foregroundStyle(.black)
+                    .background(.yellow)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                hubButton("Boss Select", systemImage: "crown.fill", color: .white) {
+                    runtime.selectNextBossFromHub()
+                }
+                hubButton("Inventory", systemImage: "shippingbox.fill", color: .white) {
+                    runtime.inspectInventoryFromHub()
+                }
+                hubButton("Diagnostics", systemImage: "doc.text.magnifyingglass", color: .mint) {
+                    runtime.requestReport()
+                }
+                hubButton(runtime.debugOverlayEnabled ? "Debug On" : "Debug Off", systemImage: "ladybug.fill", color: runtime.debugOverlayEnabled ? .green : .gray) {
+                    runtime.toggleDebugOverlay()
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .background(.black.opacity(0.86))
+    }
+
+    private func hubButton(_ title: String, systemImage: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.monospaced().bold())
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .foregroundStyle(.black)
+                .background(color)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
 }
@@ -396,12 +429,6 @@ struct BattleSceneCompositionView: View {
                 if includeControls {
                     controlsLayer
                 }
-                if includeDebug {
-                    RuntimeDebugOverlayView(runtime: runtime)
-                        .padding(.top, 52)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                }
                 if runtime.victoryOverlay {
                     victoryLayer
                 }
@@ -480,19 +507,23 @@ struct BattleSceneCompositionView: View {
                     .stroke(.green.opacity(0.95), lineWidth: 3)
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
-                Text(runtime.trackingState.rawValue)
-                    .font(.caption.monospaced().bold())
-                    .foregroundStyle(.green)
-                    .position(x: rect.midX, y: rect.minY - 12)
+                if includeDebug {
+                    Text(runtime.trackingState.rawValue)
+                        .font(.caption.monospaced().bold())
+                        .foregroundStyle(.green)
+                        .position(x: rect.midX, y: rect.minY - 12)
+                }
             } else if runtime.trackingState == .search || runtime.trackingState == .locking {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(.yellow.opacity(0.8), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                     .frame(width: size.width * 0.4, height: size.height * 0.22)
                     .position(x: size.width * 0.5, y: size.height * 0.5)
-                Text(runtime.battleMessage)
-                    .font(.caption.monospaced().bold())
-                    .foregroundStyle(.yellow)
-                    .position(x: size.width * 0.5, y: size.height * 0.5 - 80)
+                if includeDebug {
+                    Text(runtime.battleMessage)
+                        .font(.caption.monospaced().bold())
+                        .foregroundStyle(.yellow)
+                        .position(x: size.width * 0.5, y: size.height * 0.5 - 80)
+                }
             }
         }
         .allowsHitTesting(false)
@@ -524,18 +555,22 @@ struct BattleSceneCompositionView: View {
                     Text(runtime.selectedBoss.displayName.uppercased())
                         .font(.headline.bold())
                         .foregroundStyle(Color(hex: runtime.selectedBoss.accentHex) ?? .white)
-                    Text("TRACKING \(runtime.trackingState.rawValue)  COMBAT \(runtime.combatState.rawValue)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.white.opacity(0.75))
+                    if includeDebug {
+                        Text("TRACKING \(runtime.trackingState.rawValue)  COMBAT \(runtime.combatState.rawValue)")
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 6) {
-                    Text(runtime.camera.status)
-                        .font(.caption.monospaced().bold())
-                        .foregroundStyle(.white)
-                    Text(runtime.photoStateText)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.white.opacity(0.75))
+                if includeDebug {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text(runtime.camera.status)
+                            .font(.caption.monospaced().bold())
+                            .foregroundStyle(.white)
+                        Text(runtime.photoStateText)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -580,7 +615,16 @@ struct BattleSceneCompositionView: View {
     private var controlsLayer: some View {
         VStack {
             Spacer()
-            HStack(spacing: 8) {
+            VStack(spacing: 10) {
+                if includeDebug {
+                    RuntimeDebugPanelCard(runtime: runtime)
+                        .frame(maxHeight: 260)
+                }
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8)
+                ], spacing: 8) {
                 button(title: "PHOTO", systemImage: "camera.fill", color: .yellow) {
                     capturePhoto()
                 }
@@ -591,8 +635,10 @@ struct BattleSceneCompositionView: View {
                     runtime.recStateText = "REC_COMPOSED_FAIL"
                     runtime.lastError = "REC capture is not implemented in this MVP."
                 }
-                button(title: "DEBUG HIT", systemImage: "burst.fill", color: .orange) {
-                    runtime.debugHit()
+                if includeDebug {
+                    button(title: "DEBUG HIT", systemImage: "burst.fill", color: .orange) {
+                        runtime.debugHit()
+                    }
                 }
                 button(title: "RESET", systemImage: "arrow.counterclockwise", color: .red) {
                     runtime.resetBattle()
@@ -602,6 +648,7 @@ struct BattleSceneCompositionView: View {
                 }
                 button(title: "COPY", systemImage: "doc.on.doc.fill", color: .blue) {
                     runtime.copyReportToPasteboard()
+                }
                 }
             }
             .padding(10)
@@ -667,12 +714,14 @@ struct BattleSceneCompositionView: View {
             VStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .font(.headline)
-                Text(title)
-                    .font(.caption2.monospaced().bold())
+            Text(title)
+                .font(.caption2.monospaced().bold())
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             }
-            .frame(minWidth: 58)
+            .frame(maxWidth: .infinity, minHeight: 56)
             .padding(.vertical, 8)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 4)
             .foregroundStyle(.black)
             .background(color)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -710,8 +759,8 @@ struct CameraLayerView: View {
             } else {
                 ZStack {
                     Color.black
-                    Text(runtime.camera.status)
-                        .font(.headline.monospaced())
+                    Text(runtime.debugOverlayEnabled ? runtime.camera.status : "CAMERA STARTING")
+                        .font(.headline.monospaced().bold())
                         .foregroundStyle(.white)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
@@ -981,6 +1030,64 @@ struct InventorySummaryCard: View {
     }
 }
 
+struct RuntimeDebugPanelCard: View {
+    @ObservedObject var runtime: RuntimeSessionViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("DEBUG", systemImage: "ladybug.fill")
+                    .font(.headline.monospaced().bold())
+                    .foregroundStyle(.green)
+                Spacer()
+                Button {
+                    runtime.toggleDebugOverlay()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+            }
+
+            RuntimeDebugOverlayView(runtime: runtime)
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                debugButton("SHOW DIAGNOSTIC REPORT", systemImage: "doc.text.magnifyingglass", color: .mint) {
+                    runtime.requestReport()
+                }
+                debugButton("COPY DIAGNOSTIC REPORT", systemImage: "doc.on.doc.fill", color: .blue) {
+                    runtime.copyReportToPasteboard()
+                }
+                debugButton("RESET SESSION", systemImage: "arrow.counterclockwise", color: .orange) {
+                    runtime.resetBattle()
+                }
+                debugButton("DEBUG HIT", systemImage: "burst.fill", color: .yellow) {
+                    runtime.debugHit()
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.black.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.green.opacity(0.32), lineWidth: 1))
+    }
+
+    private func debugButton(_ title: String, systemImage: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.caption2.monospaced().bold())
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .foregroundStyle(.black)
+                .background(color)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
 struct RuntimeDebugOverlayView: View {
     @ObservedObject var runtime: RuntimeSessionViewModel
 
@@ -995,9 +1102,11 @@ struct RuntimeDebugOverlayView: View {
                 debugRow("camera started", snapshot.cameraStarted ? "YES" : "NO")
                 debugRow("frame rx", runtime.frameReceived ? "YES" : "NO")
                 debugRow("frame count", "\(snapshot.frameCount)")
+                debugRow("last frame", snapshot.lastFrameTimestamp.map { DateFormatter.runtimeReport.string(from: $0) } ?? "NONE")
                 debugRow("camera size", "\(snapshot.cameraFrameWidth)x\(snapshot.cameraFrameHeight)")
                 debugRow("camera orient", snapshot.cameraFrameOrientation)
                 debugRow("detector", "\(snapshot.detectorFrameCount)")
+                debugRow("last detect frame", snapshot.lastDetectorFrameTimestamp.map { DateFormatter.runtimeReport.string(from: $0) } ?? "NONE")
                 debugRow("detector size", "\(snapshot.detectorInputWidth)x\(snapshot.detectorInputHeight)")
                 debugRow("detector orient", snapshot.detectorInputOrientation)
                 debugRow("tracking", snapshot.trackingState)
@@ -1023,7 +1132,7 @@ struct RuntimeDebugOverlayView: View {
                 debugRow("rec", snapshot.recState)
                 debugRow("last fail", runtime.lastFailureReason.isEmpty ? "NONE" : runtime.lastFailureReason)
                 Divider().background(.white.opacity(0.5))
-                ForEach(snapshot.recentEvents, id: \.id) { event in
+                ForEach(snapshot.recentEvents.suffix(25), id: \.id) { event in
                     Text("\(event.timestamp.formatted(date: .omitted, time: .standard)) \(event.name)")
                         .lineLimit(1)
                         .font(.caption2.monospaced())
@@ -1031,8 +1140,6 @@ struct RuntimeDebugOverlayView: View {
                 }
             }
             .padding(10)
-            .background(.black.opacity(0.68))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
             .frame(maxWidth: 360, alignment: .leading)
         }
         .frame(maxHeight: 250)
@@ -1047,6 +1154,8 @@ struct RuntimeDebugOverlayView: View {
             Text(value)
                 .font(.caption2.monospaced().bold())
                 .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 }
@@ -1073,6 +1182,43 @@ struct DiagnosticsReportSheet: View {
                         runtime.showReportSheet = false
                     }
                 }
+            }
+        }
+    }
+}
+
+struct LastSessionReportSheet: View {
+    @ObservedObject var runtime: RuntimeSessionViewModel
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                Text(runtime.lastSessionReportText)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
+            .navigationTitle("LAST SESSION DIAGNOSTIC REPORT")
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 8) {
+                    Button("COPY REPORT") {
+                        runtime.copyLastSessionReportToPasteboard()
+                    }
+                    .reportSheetButton(color: .blue)
+
+                    Button("DISMISS") {
+                        runtime.dismissLastSessionReport()
+                    }
+                    .reportSheetButton(color: .gray)
+
+                    Button("CLEAR OLD REPORT", role: .destructive) {
+                        runtime.clearLastSessionReport()
+                    }
+                    .reportSheetButton(color: .red)
+                }
+                .padding(12)
+                .background(.ultraThinMaterial)
             }
         }
     }
@@ -1131,6 +1277,15 @@ extension View {
             .padding(.vertical, 10)
             .foregroundStyle(.black)
             .background(accent)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    func reportSheetButton(color: Color) -> some View {
+        self
+            .font(.caption.monospaced().bold())
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .foregroundStyle(.white)
+            .background(color)
             .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }

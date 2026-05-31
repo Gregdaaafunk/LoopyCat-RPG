@@ -223,6 +223,7 @@ struct RuntimeDiagnosticsSnapshot: Codable {
     var cameraStarted: Bool
     var cameraStatus: String
     var frameCount: Int
+    var lastFrameTimestamp: Date?
     var cameraFrameWidth: Int
     var cameraFrameHeight: Int
     var cameraFrameOrientation: String
@@ -230,6 +231,7 @@ struct RuntimeDiagnosticsSnapshot: Codable {
     var detectorInputHeight: Int
     var detectorInputOrientation: String
     var detectorFrameCount: Int
+    var lastDetectorFrameTimestamp: Date?
     var markerCandidateCount: Int
     var markerFoundCount: Int
     var lastMarkerConfidence: Double
@@ -262,7 +264,6 @@ struct RuntimeDiagnosticsSnapshot: Codable {
 }
 
 struct RuntimeSettings: Codable {
-    var debugOverlayEnabled: Bool
     var cameraPermissionSeen: Bool
     var photosPermissionSeen: Bool
     var recordingQuality: String

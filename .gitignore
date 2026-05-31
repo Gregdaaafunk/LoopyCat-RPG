@@ -1,0 +1,11 @@
+CLAUDE_REVIEW.md
+.claude-review/
+.env
+.env.*
+*.p8
+*.p12
+*.pem
+*.key
+*.mobileprovision
+*.cer
+*.cert

@@ -55,6 +55,7 @@ final class RuntimeSaveStore {
     var settingsURL: URL { baseDirectory.appendingPathComponent("settings.json") }
     var battleHistoryURL: URL { baseDirectory.appendingPathComponent("battle_history.json") }
     var rewardsURL: URL { baseDirectory.appendingPathComponent("rewards.json") }
+    var lastSessionReportURL: URL { baseDirectory.appendingPathComponent("last_session_report.txt") }
     var catPhotosDirectory: URL { baseDirectory.appendingPathComponent("cat_photos", isDirectory: true) }
 
     func loadCatProfile() -> RuntimeCatProfile? {
@@ -75,7 +76,6 @@ final class RuntimeSaveStore {
 
     func loadSettings() -> RuntimeSettings {
         loadJSON(RuntimeSettings.self, from: settingsURL) ?? RuntimeSettings(
-            debugOverlayEnabled: true,
             cameraPermissionSeen: false,
             photosPermissionSeen: false,
             recordingQuality: "HIGH"
@@ -123,6 +123,22 @@ final class RuntimeSaveStore {
         guard let filename else { return nil }
         let url = catPhotosDirectory.appendingPathComponent(filename)
         return UIImage(contentsOfFile: url.path)
+    }
+
+    func loadLastSessionReport() -> String? {
+        guard fileManager.fileExists(atPath: lastSessionReportURL.path) else { return nil }
+        guard let report = try? String(contentsOf: lastSessionReportURL, encoding: .utf8) else { return nil }
+        let trimmed = report.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func saveLastSessionReport(_ report: String) throws {
+        try report.write(to: lastSessionReportURL, atomically: true, encoding: .utf8)
+    }
+
+    func clearLastSessionReport() throws {
+        guard fileManager.fileExists(atPath: lastSessionReportURL.path) else { return }
+        try fileManager.removeItem(at: lastSessionReportURL)
     }
 
     private func loadJSON<T: Decodable>(_ type: T.Type, from url: URL) -> T? {

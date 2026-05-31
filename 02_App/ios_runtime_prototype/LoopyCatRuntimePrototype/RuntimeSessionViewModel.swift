@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Photos
+import SwiftUI
 import UIKit
 
 @MainActor
@@ -20,8 +21,10 @@ final class RuntimeSessionViewModel: ObservableObject {
     @Published var recordingState: RuntimeRecordingState = .ready
     @Published var photoStateText = "PHOTO_COMPOSED_UNKNOWN"
     @Published var recStateText = "REC_COMPOSED_UNKNOWN"
-    @Published var debugOverlayEnabled = true
+    @Published var debugOverlayEnabled = false
     @Published var showReportSheet = false
+    @Published var showLastSessionReportSheet = false
+    @Published var lastSessionReportText = ""
     @Published var sessionID = UUID().uuidString
 
     @Published var catProfile: RuntimeCatProfile?
@@ -72,6 +75,8 @@ final class RuntimeSessionViewModel: ObservableObject {
     @Published var detectorInputFrameSize = CGSize.zero
     @Published var detectorInputOrientation = "UNKNOWN"
     @Published var detectorFrameCount = 0
+    @Published var lastFrameTimestamp: Date?
+    @Published var lastDetectorFrameTimestamp: Date?
     @Published var currentCameraFrame: CGImage?
     @Published var frameReceived = false
     @Published var lastCameraStatus = "IDLE"
@@ -105,7 +110,11 @@ final class RuntimeSessionViewModel: ObservableObject {
         settings = saveStore.loadSettings()
         inventory = saveStore.loadInventory()
         catProfile = saveStore.loadCatProfile()
-        debugOverlayEnabled = settings.debugOverlayEnabled
+        debugOverlayEnabled = false
+        if let previousReport = saveStore.loadLastSessionReport() {
+            lastSessionReportText = previousReport
+            showLastSessionReportSheet = true
+        }
         orientation.forcePortraitLaunch()
         camera.updateOrientation(.portrait)
 
@@ -151,6 +160,7 @@ final class RuntimeSessionViewModel: ObservableObject {
             "screen": appScreen.rawValue,
             "orientation": orientation.currentOrientation.runtimeString
         ])
+        persistDiagnosticReport(reason: "launch")
     }
 
     func stop() {
@@ -158,6 +168,27 @@ final class RuntimeSessionViewModel: ObservableObject {
         cameraStarted = false
         cameraStartEventSent = false
         UIDevice.current.endGeneratingDeviceOrientationNotifications()
+    }
+
+    func scenePhaseChanged(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            eventBus.emit("app_foregrounded", owner: "ui_engine", battleID: battleID, payload: [
+                "screen": appScreen.rawValue
+            ])
+        case .inactive:
+            eventBus.emit("app_inactive", owner: "ui_engine", battleID: battleID, payload: [
+                "screen": appScreen.rawValue
+            ])
+            persistDiagnosticReport(reason: "inactive")
+        case .background:
+            eventBus.emit("app_backgrounded", owner: "ui_engine", battleID: battleID, payload: [
+                "screen": appScreen.rawValue
+            ])
+            persistDiagnosticReport(reason: "background")
+        @unknown default:
+            persistDiagnosticReport(reason: "unknown_scene_phase")
+        }
     }
 
     func updateDeviceOrientation() {
@@ -171,8 +202,8 @@ final class RuntimeSessionViewModel: ObservableObject {
 
     func toggleDebugOverlay() {
         debugOverlayEnabled.toggle()
-        settings.debugOverlayEnabled = debugOverlayEnabled
-        try? saveStore.saveSettings(settings)
+        eventBus.emit(debugOverlayEnabled ? "debug_enabled" : "debug_disabled", owner: "ui_engine", battleID: battleID, payload: [:])
+        persistDiagnosticReport(reason: "debug_toggle")
     }
 
     func loadCurrentCameraFrameAsCatPhoto() {
@@ -270,17 +301,57 @@ final class RuntimeSessionViewModel: ObservableObject {
         eventBus.emit("battle_reset", owner: "ui_engine", battleID: battleID, payload: [:])
     }
 
+    func selectNextBossFromHub() {
+        selectBoss()
+        battleMessage = "BOSS READY"
+        eventBus.emit("boss_selected", owner: "boss_engine", battleID: battleID, payload: [
+            "boss_id": selectedBoss.id,
+            "boss_name": selectedBoss.displayName,
+            "source": "hub"
+        ])
+        persistDiagnosticReport(reason: "boss_selected")
+    }
+
+    func inspectInventoryFromHub() {
+        eventBus.emit("inventory_opened", owner: "ui_engine", battleID: battleID, payload: [
+            "item_count": "\(inventory.count)"
+        ])
+        persistDiagnosticReport(reason: "inventory_opened")
+    }
+
     func debugHit() {
         applyHit(kind: .heavy, source: "DEBUG_HIT", sourceConfidence: 1.0, normalizedLocation: CGPoint(x: 0.5, y: 0.5))
         eventBus.emit("debug_hit_pressed", owner: "ui_engine", battleID: battleID, payload: [:])
     }
 
     func requestReport() {
+        persistDiagnosticReport(reason: "diagnostics_opened")
         showReportSheet = true
     }
 
     func copyReportToPasteboard() {
-        UIPasteboard.general.string = diagnosticReport()
+        let report = diagnosticReport()
+        UIPasteboard.general.string = report
+        try? saveStore.saveLastSessionReport(report)
+    }
+
+    func copyLastSessionReportToPasteboard() {
+        UIPasteboard.general.string = lastSessionReportText
+    }
+
+    func dismissLastSessionReport() {
+        showLastSessionReportSheet = false
+    }
+
+    func clearLastSessionReport() {
+        try? saveStore.clearLastSessionReport()
+        lastSessionReportText = ""
+        showLastSessionReportSheet = false
+    }
+
+    func persistDiagnosticReport(reason: String) {
+        let report = diagnosticReport(reason: reason)
+        try? saveStore.saveLastSessionReport(report)
     }
 
     func equipCurrentLoot() {
@@ -344,6 +415,9 @@ final class RuntimeSessionViewModel: ObservableObject {
         if success {
             recordingState = .finished
             photoStateText = "PHOTO_COMPOSED_PASS"
+            eventBus.emit("photo_saved", owner: "recording_engine", battleID: battleID, payload: [
+                "mode": "PHOTO"
+            ])
             eventBus.emit("recording_finished", owner: "recording_engine", battleID: battleID, payload: [
                 "mode": "PHOTO",
                 "saved_to_photos": "true",
@@ -353,6 +427,9 @@ final class RuntimeSessionViewModel: ObservableObject {
             recordingState = .failed
             photoStateText = "PHOTO_COMPOSED_FAIL"
             lastError = message
+            eventBus.emit("photo_failed", owner: "recording_engine", battleID: battleID, payload: [
+                "error_message": message
+            ], errorFlag: true)
             eventBus.emit("recording_failed", owner: "recording_engine", battleID: battleID, payload: [
                 "mode": "PHOTO",
                 "error_message": message,
@@ -383,6 +460,7 @@ final class RuntimeSessionViewModel: ObservableObject {
             cameraStarted: cameraStarted,
             cameraStatus: camera.status,
             frameCount: camera.frameCount,
+            lastFrameTimestamp: lastFrameTimestamp,
             cameraFrameWidth: Int(cameraFrameSize.width),
             cameraFrameHeight: Int(cameraFrameSize.height),
             cameraFrameOrientation: cameraFrameOrientation,
@@ -390,6 +468,7 @@ final class RuntimeSessionViewModel: ObservableObject {
             detectorInputHeight: Int(detectorInputFrameSize.height),
             detectorInputOrientation: detectorInputOrientation,
             detectorFrameCount: detectorFrameCount,
+            lastDetectorFrameTimestamp: lastDetectorFrameTimestamp,
             markerCandidateCount: markerCandidateCount,
             markerFoundCount: markerFoundCount,
             lastMarkerConfidence: markerConfidence,
@@ -418,30 +497,34 @@ final class RuntimeSessionViewModel: ObservableObject {
             lastError: lastError,
             lastFailureReason: lastFailureReason,
             performanceNote: camera.frameCount > 0 ? "FRAME_OK" : "NO_FRAMES",
-            recentEvents: Array(eventBus.recentEvents.suffix(10))
+            recentEvents: Array(eventBus.recentEvents.suffix(50))
         )
     }
 
-    func diagnosticReport() -> String {
+    func diagnosticReport(reason: String = "manual") -> String {
         let snapshot = diagnosticSnapshot()
         var lines: [String] = []
         lines.append("LoopyCat Runtime Prototype Diagnostic Report")
+        lines.append("report_reason: \(reason)")
+        lines.append("report_created_at: \(DateFormatter.runtimeReport.string(from: Date()))")
         lines.append("session_id: \(snapshot.sessionID)")
         lines.append("app_version: \(snapshot.appVersion) (\(snapshot.buildVersion))")
         lines.append("device_model: \(snapshot.deviceModel)")
         lines.append("iOS_version: \(snapshot.systemVersion)")
         lines.append("launch_orientation: \(snapshot.launchOrientation)")
-        lines.append("current_orientation: \(snapshot.currentOrientation)")
+        lines.append("final_orientation: \(snapshot.currentOrientation)")
         lines.append("camera_permission: \(snapshot.cameraPermission)")
         lines.append("photos_permission: \(snapshot.photosPermission)")
         lines.append("camera_started: \(snapshot.cameraStarted)")
         lines.append("camera_status: \(snapshot.cameraStatus)")
         lines.append("frame_count: \(snapshot.frameCount)")
+        lines.append("last_frame_time: \(snapshot.lastFrameTimestamp.map { DateFormatter.runtimeReport.string(from: $0) } ?? "NONE")")
         lines.append("camera_frame_size: \(snapshot.cameraFrameWidth)x\(snapshot.cameraFrameHeight)")
         lines.append("camera_frame_orientation: \(snapshot.cameraFrameOrientation)")
         lines.append("detector_input_size: \(snapshot.detectorInputWidth)x\(snapshot.detectorInputHeight)")
         lines.append("detector_input_orientation: \(snapshot.detectorInputOrientation)")
         lines.append("detector_frame_count: \(snapshot.detectorFrameCount)")
+        lines.append("last_detector_frame_time: \(snapshot.lastDetectorFrameTimestamp.map { DateFormatter.runtimeReport.string(from: $0) } ?? "NONE")")
         lines.append("marker_candidate_count: \(snapshot.markerCandidateCount)")
         lines.append("marker_found_count: \(snapshot.markerFoundCount)")
         lines.append("last_marker_confidence: \(snapshot.lastMarkerConfidence)")
@@ -468,7 +551,7 @@ final class RuntimeSessionViewModel: ObservableObject {
         lines.append("last_error: \(snapshot.lastError)")
         lines.append("last_failure_reason: \(snapshot.lastFailureReason)")
         lines.append("performance_note: \(snapshot.performanceNote)")
-        lines.append("events:")
+        lines.append("last_50_important_events:")
         for event in snapshot.recentEvents {
             let payload = event.payload.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ", ")
             lines.append("  - \(DateFormatter.runtimeReport.string(from: event.timestamp)) \(event.owner).\(event.name) battle=\(event.battleID) \(payload)")
@@ -518,6 +601,11 @@ final class RuntimeSessionViewModel: ObservableObject {
         lossDuration = 0
         relockCooldownRemaining = 0
         hitIgnoreActive = false
+        if anchorActive {
+            eventBus.emit("anchor_lost", owner: "tracking_engine", battleID: battleID, payload: [
+                "source": "battle_reset"
+            ])
+        }
         anchorActive = false
         anchorMemory = nil
         comboCount = 0
@@ -551,6 +639,7 @@ final class RuntimeSessionViewModel: ObservableObject {
         cameraFrameOrientation = orientation.runtimeString
         detectorInputFrameSize = size
         detectorInputOrientation = orientation.runtimeString
+        lastFrameTimestamp = timestamp
         lastCameraStatus = camera.status
         cameraPermissionState = camera.permissionState
         detectorFrameCount = markerDetector.processedFrameCount
@@ -559,13 +648,6 @@ final class RuntimeSessionViewModel: ObservableObject {
             cameraStartEventSent = true
             eventBus.emit("camera_started", owner: "camera_engine", battleID: battleID, payload: [
                 "frame_size": "\(size.width)x\(size.height)",
-                "orientation": orientation.runtimeString
-            ])
-        }
-
-        if camera.frameCount == 1 || camera.frameCount.isMultiple(of: 30) {
-            eventBus.emit("frame_received", owner: "camera_engine", battleID: battleID, payload: [
-                "frame_count": "\(camera.frameCount)",
                 "orientation": orientation.runtimeString
             ])
         }
@@ -592,6 +674,7 @@ final class RuntimeSessionViewModel: ObservableObject {
     private func processMarkerDetection(_ result: RuntimeMarkerObservation?) {
         let now = Date()
         detectorFrameCount = markerDetector.processedFrameCount
+        lastDetectorFrameTimestamp = now
 
         if let result {
             markerFound = true
@@ -659,6 +742,9 @@ final class RuntimeSessionViewModel: ObservableObject {
                         eventBus.emit("lock_lost", owner: "tracking_engine", battleID: battleID, payload: [
                             "loss_duration": String(format: "%.2f", lossDuration)
                         ])
+                        eventBus.emit("marker_lost", owner: "tracking_engine", battleID: battleID, payload: [
+                            "loss_duration": String(format: "%.2f", lossDuration)
+                        ])
                     }
                 } else if lossDuration < 5.0 {
                     if trackingState != .signalUnstable {
@@ -695,6 +781,9 @@ final class RuntimeSessionViewModel: ObservableObject {
                 lastSeenAt: now,
                 confidence: observation.confidence
             )
+            eventBus.emit("anchor_created", owner: "tracking_engine", battleID: battleID, payload: [
+                "confidence": String(format: "%.3f", observation.confidence)
+            ])
             return
         }
 
@@ -884,6 +973,11 @@ final class RuntimeSessionViewModel: ObservableObject {
             "source": source,
             "confidence": String(format: "%.3f", sourceConfidence)
         ])
+        eventBus.emit("hit_registered", owner: "combat_engine", battleID: battleID, payload: [
+            "damage": "\(baseDamage)",
+            "kind": kind.rawValue,
+            "source": source
+        ])
 
         if comboCount > 1 {
             eventBus.emit("combo_updated", owner: "combat_engine", battleID: battleID, payload: [
@@ -934,6 +1028,7 @@ final class RuntimeSessionViewModel: ObservableObject {
             "damage_done": "\(damageTotal)"
         ])
         eventBus.emit("ko_sequence_started", owner: "combat_engine", battleID: battleID, payload: [:])
+        persistDiagnosticReport(reason: "battle_ended")
 
         victoryTask?.cancel()
         victoryTask = Task { [weak self] in
