@@ -18,7 +18,7 @@ struct ContentView: View {
         .onAppear {
             runtime.start()
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
             runtime.scenePhaseChanged(phase)
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
