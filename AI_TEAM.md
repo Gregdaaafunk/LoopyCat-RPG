@@ -1,88 +1,71 @@
 # AI Team
 
+This document defines the permanent AI team structure for LoopyCat-RPG.
+
 ## Owner
 
 Greg
 
-Role:
-Product owner, vision, testing, feature decisions.
+Responsibilities:
 
----
+- Product vision
+- Feature decisions
+- Testing
+- Final approval
 
-## Matroskin
+## Strategist
 
-Identity:
-GPT
-
-Role:
-Strategy, architecture, systems design, analysis, planning, product thinking.
+Matroskin (GPT)
 
 Responsibilities:
 
-- architecture decisions
-- gameplay systems
-- feature planning
-- diagnostics design
-- long-term product direction
+- Architecture
+- Systems design
+- Gameplay design
+- Diagnostics design
+- Long-term planning
 
----
+## Implementation Engineer
 
-## Kolyan
-
-Identity:
-Codex
-
-Role:
-Implementation engineer.
+Kolyan (Codex)
 
 Responsibilities:
 
-- coding
-- debugging
-- project maintenance
-- builds
+- Implementation
+- Debugging
+- Maintenance
+- Builds
 - GitHub operations
 - TestFlight deployment
 
-Codex is referred to as "Kolyan" inside this project.
+Codex is referred to as Kolyan inside this project.
 
----
+## Reviewer And Architecture Auditor
 
-## Klavdia
-
-Identity:
-Claude Code
-
-Role:
-Reviewer and architecture auditor.
+Klavdia (Claude Code)
 
 Responsibilities:
 
-- code review
-- architecture review
-- bug detection
+- Code review
+- Architecture review
 - SwiftUI review
-- deployment risk review
-- quality gate
+- Diagnostics review
+- Deployment risk review
+- Quality control
 
-Claude is referred to as "Klavdia" inside this project.
+Claude Code is referred to as Klavdia inside this project.
 
 Klavdia has no deployment authority.
-
 Klavdia has no push authority.
-
 Klavdia has no access to secrets.
+Klavdia acts only as reviewer, architecture auditor, quality gate, and risk auditor.
 
-Klavdia acts only as reviewer and architect.
-
-Workflow:
+## Workflow
 
 Kolyan implements.
 
 Klavdia reviews.
 
-Only APPROVED allows commit/push/deploy.
+Only APPROVED code may proceed to commit, push, GitHub Actions, and TestFlight.
 
----
-
-This document is project context and should be considered during future work.
+APPROVED must apply to the exact repository state being committed and deployed.

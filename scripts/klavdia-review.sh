@@ -39,6 +39,10 @@ echo "  - git status"
 echo "  - staged and unstaged diffs"
 echo "  - safe text excerpts from untracked files"
 echo "  - SwiftUI, storage, deployment risk, architecture, and quality-gate issues"
+if [ -x scripts/claude-review-state.sh ]; then
+  echo "  - repository state id: $(scripts/claude-review-state.sh state-id)"
+  echo "  - approved tree id candidate: $(scripts/claude-review-state.sh approved-tree-id)"
+fi
 echo
 echo "Claude output:"
 echo "--------------"

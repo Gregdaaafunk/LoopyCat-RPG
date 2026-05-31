@@ -9,6 +9,9 @@ model="${CLAUDE_REVIEW_MODEL:-sonnet}"
 max_diff_bytes="${CLAUDE_REVIEW_MAX_DIFF_BYTES:-220000}"
 report_path="${CLAUDE_REVIEW_REPORT:-CLAUDE_REVIEW.md}"
 local_env="${CLAUDE_REVIEW_ENV:-$HOME/.config/claude-review/env}"
+review_id="$(date -u '+%Y%m%dT%H%M%SZ')-$(git rev-parse --short HEAD)"
+review_timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+state_script="$repo_root/scripts/claude-review-state.sh"
 
 if [ -f "$local_env" ]; then
   # shellcheck disable=SC1090
@@ -39,6 +42,9 @@ if git diff --quiet --ignore-submodules -- && git diff --cached --quiet --ignore
   echo "No local changes to review."
   exit 0
 fi
+
+repository_state_id="$("$state_script" state-id)"
+approved_tree_id="$("$state_script" approved-tree-id)"
 
 changed_files="$(git status --porcelain=v1 | sed 's/^...//')"
 blocked_patterns='(^|/)(\.env|secrets?|private|credentials?|certs?)(\.|/|$)|\.(p8|p12|pem|key|mobileprovision|cer|cert)$|AppStoreConnect|ASC_KEY|MATCH_PASSWORD|FASTLANE_PASSWORD'
@@ -111,7 +117,7 @@ while IFS= read -r file; do
 done < <(git ls-files --others --exclude-standard)
 
 cat > "$prompt_file" <<'PROMPT'
-You are Claude Code acting only as a read-only reviewer and architect for LoopyCat-RPG.
+You are Claude Code acting only as a read-only reviewer, architecture auditor, quality gate, and risk auditor for LoopyCat-RPG.
 
 Return exactly one of these status labels as the first line:
 APPROVED
@@ -131,19 +137,25 @@ Focus on:
 Use this response shape:
 STATUS
 
-Findings:
-- severity: file:line or file: issue and fix
+Critical Fixes:
+- concrete blocker, or "None"
 
-Required Fixes:
-- concrete required fix, or "None"
+Improvement Suggestions:
+- non-blocking improvement, or "None"
 
-Notes:
-- optional non-blocking observations
+Deployment Risks:
+- deployment or future release risk, or "None"
 
-Approve only when the change is ready for commit/push/deployment gate.
+Approve only when the exact repository state is ready for commit/push/deployment gate.
 PROMPT
 
 {
+  printf '\nReview metadata:\n\n```text\n'
+  printf 'review_id: %s\n' "$review_id"
+  printf 'timestamp: %s\n' "$review_timestamp"
+  printf 'repository_state_id: %s\n' "$repository_state_id"
+  printf 'approved_tree_id: %s\n' "$approved_tree_id"
+  printf '```\n'
   printf '\nRepository status:\n\n```text\n'
   git status --short --branch
   printf '```\n\nDiff stat:\n\n```text\n'
@@ -159,6 +171,7 @@ PROMPT
   fi
 } >> "$prompt_file"
 
+claude_output="$tmp_dir/claude-output.txt"
 "$claude_bin" \
   --print \
   --model "$model" \
@@ -169,9 +182,21 @@ PROMPT
   --mcp-config "$mcp_config" \
   --settings "$settings_file" \
   --no-session-persistence \
-  --output-format text < "$prompt_file" | tee "$report_path"
+  --output-format text < "$prompt_file" | tee "$claude_output"
 
-status="$(sed -n '1p' "$report_path" | tr -d '\r')"
+status="$(sed -n '1p' "$claude_output" | tr -d '\r')"
+{
+  printf '%s\n\n' "$status"
+  printf 'Review ID: %s\n' "$review_id"
+  printf 'Timestamp: %s\n' "$review_timestamp"
+  printf 'Repository State ID: %s\n' "$repository_state_id"
+  printf 'Approved Tree ID: %s\n' "$approved_tree_id"
+  printf 'Changed Files:\n'
+  "$state_script" changed-files | sed 's/^/- /'
+  printf '\n'
+  sed '1d' "$claude_output"
+} > "$report_path"
+
 case "$status" in
   APPROVED)
     echo "Claude review approved."
