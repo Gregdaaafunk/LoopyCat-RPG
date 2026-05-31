@@ -180,7 +180,7 @@ final class RuntimeSessionViewModel: ObservableObject {
             lastError = "No camera frame available to use as cat photo."
             return
         }
-        let image = UIImage(cgImage: currentFrame, scale: 1.0, orientation: camera.currentOrientation)
+        let image = UIImage(cgImage: currentFrame, scale: 1.0, orientation: camera.currentOrientation.uiImageOrientation)
         catDraftPhoto = image
         eventBus.emit("photo_captured", owner: "ui_engine", battleID: battleID, payload: [
             "source": "camera_preview"

@@ -160,7 +160,7 @@ struct CatOnboardingView: View {
                         .foregroundStyle(.white)
                     Text(runtime.catDraftTitle.isEmpty ? "DESTROYER" : runtime.catDraftTitle.uppercased())
                         .font(.headline.weight(.semibold))
-                        .foregroundStyle(Color(hex: "#FFD166"))
+                        .foregroundStyle(Color(hex: "#FFD166") ?? .yellow)
                     Text("LEVEL 1")
                         .font(.caption.monospaced().bold())
                         .foregroundStyle(.white.opacity(0.65))
@@ -702,7 +702,7 @@ struct CameraLayerView: View {
     var body: some View {
         GeometryReader { proxy in
             if let cameraImage = runtime.currentCameraFrame {
-                Image(uiImage: UIImage(cgImage: cameraImage, scale: 1.0, orientation: runtime.orientation.imageOrientation))
+                Image(uiImage: UIImage(cgImage: cameraImage, scale: 1.0, orientation: runtime.orientation.uiImageOrientation))
                     .resizable()
                     .scaledToFill()
                     .frame(width: proxy.size.width, height: proxy.size.height)

@@ -208,6 +208,21 @@ final class OrientationCoordinator: ObservableObject {
         }
     }
 
+    var uiImageOrientation: UIImage.Orientation {
+        switch currentOrientation {
+        case .portrait:
+            return .right
+        case .portraitUpsideDown:
+            return .left
+        case .landscapeLeft:
+            return .up
+        case .landscapeRight:
+            return .down
+        default:
+            return .right
+        }
+    }
+
     var videoOrientation: AVCaptureVideoOrientation {
         switch currentOrientation {
         case .portrait:
@@ -301,6 +316,29 @@ extension CGImagePropertyOrientation {
             return "right"
         @unknown default:
             return "unknown"
+        }
+    }
+
+    var uiImageOrientation: UIImage.Orientation {
+        switch self {
+        case .up:
+            return .up
+        case .upMirrored:
+            return .upMirrored
+        case .down:
+            return .down
+        case .downMirrored:
+            return .downMirrored
+        case .leftMirrored:
+            return .leftMirrored
+        case .rightMirrored:
+            return .rightMirrored
+        case .left:
+            return .left
+        case .right:
+            return .right
+        @unknown default:
+            return .up
         }
     }
 }

@@ -120,8 +120,8 @@ final class RuntimeMarkerDetector {
             )
         }
 
-        let filter = CIFilter.perspectiveCorrection()
-        filter.inputImage = image
+        guard let filter = CIFilter(name: "CIPerspectiveCorrection") else { return nil }
+        filter.setValue(image, forKey: kCIInputImageKey)
         filter.setValue(vector(from: rectangle.topLeft), forKey: "inputTopLeft")
         filter.setValue(vector(from: rectangle.topRight), forKey: "inputTopRight")
         filter.setValue(vector(from: rectangle.bottomLeft), forKey: "inputBottomLeft")
