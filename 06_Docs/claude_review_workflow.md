@@ -42,7 +42,20 @@ For a visible manual review in a terminal, run:
 scripts/klavdia-review.sh
 ```
 
-The visible command prints changed files, review scope, Claude output, and a final status line. It redacts credential-looking values from terminal output and still uses the same reviewer-only Claude configuration.
+The visible command prints changed files, review scope, live progress lines, Claude output, and a final status line. It redacts credential-looking values from terminal output and still uses the same reviewer-only Claude configuration.
+
+Live progress lines include:
+
+- `Klavdia reviewing...`
+- `Reading changed files...`
+- `Checking SwiftUI layout...`
+- `Checking architecture...`
+- `Checking diagnostics...`
+- `Checking deployment risks...`
+- `Generating findings...`
+- `Generating final report...`
+
+The live mode is meant to let Greg watch the review process instead of only seeing the final status result.
 
 The same workflow is also installed for other repositories on this machine:
 
@@ -58,18 +71,20 @@ The script refuses to send likely secret/certificate files. If that happens, ins
 
 ## Gate Rule
 
-Only this first-line status allows commit/push/deployment:
+Only this first-line status allows commit:
 
 ```text
 APPROVED
 ```
 
-These statuses block commit/push/deployment until fixed and re-reviewed:
+These statuses block commit until fixed and re-reviewed:
 
 ```text
 NEEDS_FIXES
 REJECTED
 ```
+
+Push and deployment still require a fresh verification pass with `scripts/claude-review-verify.sh`.
 
 ## Local Commit Enforcement
 
@@ -85,6 +100,19 @@ The installed hook blocks commits when:
 - `CLAUDE_REVIEW.md` is older than local changed files.
 
 The hook is intentionally local to `.git/hooks/pre-commit`; Git does not track installed hooks. The tracked source is `scripts/claude-review-pre-commit`.
+
+For manual push/deploy checks, use the approval verifier:
+
+```bash
+scripts/claude-review-verify.sh
+```
+
+The verifier checks:
+
+- the report status is `APPROVED`
+- the approved state matches the current repository state
+- no files changed after review
+- the review timestamp is newer than the final implementation
 
 Emergency bypass is available only as an explicit local override:
 

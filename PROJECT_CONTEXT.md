@@ -8,10 +8,57 @@ LoopyCat-RPG
 
 ## Current Project Goals
 
-- Build a playable iPhone-first LoopyCat RPG MVP.
+- Build a playable iPhone-first LoopyCat-RPG MVP.
 - Keep the runtime UI readable and safe on real iPhone portrait screens.
 - Preserve enough diagnostics to understand every real-device test session after app reopen.
-- Use Klavdia as a mandatory architecture and quality gate before commit, push, GitHub Actions, and TestFlight.
+- Use Klavdia as a mandatory architecture and quality gate before commit.
+- Verify approval freshness before any push, GitHub Actions run, or TestFlight deployment.
+
+## AI Team
+
+- Greg - Owner
+- Matroskin (GPT) - Strategy, architecture, systems design, analysis, long-term product direction
+- Kolyan (Codex) - Implementation engineer
+- Klavdia (Claude Code) - Reviewer, architecture auditor, quality gate, risk auditor
+
+## Workflow
+
+- Kolyan implements.
+- Klavdia reviews.
+- If Klavdia returns NEEDS_FIXES or REJECTED, fix issues, rerun review, and repeat until APPROVED.
+
+## Review Rule
+
+- Klavdia APPROVED is required before commit.
+- Klavdia APPROVED does not automatically authorize push or TestFlight deployment.
+- Before push or deploy, Kolyan must verify the approval belongs to the latest code state.
+- Before push or deploy, Kolyan must verify no files changed after review.
+- Before push or deploy, Kolyan must verify the approval timestamp is newer than the final implementation.
+- If any code changes after APPROVED, APPROVED becomes invalid and a new Klavdia review is mandatory.
+- GitHub pushes are blocked by `.git/hooks/pre-push` installed from `scripts/claude-review-pre-push`.
+- TestFlight uploads are blocked by `02_App/ios_runtime_prototype/fastlane/Fastfile`, which runs `scripts/claude-review-verify.sh` before the `beta` lane continues.
+- Local push/TestFlight gate behavior is verified by `scripts/launcher-gate-verify.sh`, which confirms `NEEDS_FIXES` and `REJECTED` block while `APPROVED` allows the current reviewed state.
+
+## Live Review Mode
+
+- Visible review entrypoint: `scripts/klavdia-review.sh`
+- Live mode shows progress lines while Klavdia is reviewing.
+- Example progress lines:
+  - `Klavdia reviewing...`
+  - `Reading changed files...`
+  - `Checking SwiftUI layout...`
+  - `Checking architecture...`
+  - `Checking diagnostics...`
+  - `Checking deployment risks...`
+  - `Generating findings...`
+  - `Generating final report...`
+
+## Startup Workflow
+
+- `loopycatrpg` is the only official startup command for the full environment.
+- It opens `/home/gregdafunk/Downloads/LoopyCat-RPG`, verifies the repository and `.git`, prints git status, verifies GitHub connectivity, loads `AI_TEAM.md`, `CODEX.md`, `CLAUDE.md`, and `PROJECT_CONTEXT.md`, starts Kolyan with `gpt-5.5` by default, and opens a separate visible live Klavdia terminal.
+- The workflow repeats review cycles until Klavdia returns `APPROVED` for the latest code state.
+- If code changes after approval, the approval is invalid and a fresh review is mandatory.
 
 ## Current Architecture Summary
 
@@ -76,12 +123,34 @@ LoopyCat-RPG
 
 - Kolyan implements.
 - Klavdia reviews.
-- Only APPROVED code may be committed, pushed, or deployed.
+- Only APPROVED code may be committed.
 - APPROVED applies only to the exact repository state reviewed by Klavdia.
 - If any file changes after approval, the approval is invalid and review must run again.
 - Klavdia has no push, deployment, release, credential, token, certificate, or account authority.
+- Klavdia has no GitHub write authority.
 - Secrets must not be printed in terminal output or sent to Klavdia.
 - Future sessions must read `AI_TEAM.md`, `CODEX.md`, `CLAUDE.md`, and `PROJECT_CONTEXT.md` before starting work.
+
+## Autonomous Mode
+
+- Normal implementation work proceeds automatically without asking for confirmation.
+- Allowed without asking:
+  - file edits
+  - refactoring
+  - bug fixes
+  - diagnostics
+  - tests
+  - reviews
+  - documentation
+  - local builds
+  - local validation
+- Ask only for:
+  - file deletion
+  - destructive operations
+  - secret handling
+  - GitHub push
+  - TestFlight deployment
+  - external service or account changes
 
 ## Visible Klavdia Review
 
@@ -95,8 +164,15 @@ The command displays:
 
 - Changed files
 - Review scope
+- Live progress lines
 - Repository state ID
 - Claude output
 - Final status: APPROVED, NEEDS_FIXES, or REJECTED
+
+For pre-push and pre-deploy verification, use:
+
+```bash
+scripts/claude-review-verify.sh
+```
 
 The command must not expose secrets, tokens, or provider credentials.

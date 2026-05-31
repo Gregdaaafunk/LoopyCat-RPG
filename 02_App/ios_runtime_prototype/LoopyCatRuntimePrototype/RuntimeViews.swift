@@ -620,35 +620,41 @@ struct BattleSceneCompositionView: View {
                     RuntimeDebugPanelCard(runtime: runtime)
                         .frame(maxHeight: 260)
                 }
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 8),
-                    GridItem(.flexible(), spacing: 8),
-                    GridItem(.flexible(), spacing: 8)
-                ], spacing: 8) {
-                button(title: "PHOTO", systemImage: "camera.fill", color: .yellow) {
-                    capturePhoto()
-                }
-                button(title: "REC", systemImage: "record.circle", color: .gray) {
-                    runtime.eventBus.emit("record_pressed", owner: "ui_engine", battleID: runtime.battleID, payload: [
-                        "mode": "COMPOSED_OUTPUT"
-                    ])
-                    runtime.recStateText = "REC_COMPOSED_FAIL"
-                    runtime.lastError = "REC capture is not implemented in this MVP."
-                }
-                if includeDebug {
-                    button(title: "DEBUG HIT", systemImage: "burst.fill", color: .orange) {
-                        runtime.debugHit()
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 8),
+                        GridItem(.flexible(), spacing: 8)
+                    ],
+                    spacing: 8
+                ) {
+                    button(title: "PHOTO", systemImage: "camera.fill", color: .yellow) {
+                        capturePhoto()
                     }
-                }
-                button(title: "RESET", systemImage: "arrow.counterclockwise", color: .red) {
-                    runtime.resetBattle()
-                }
-                button(title: "REPORT", systemImage: "doc.text.magnifyingglass", color: .mint) {
-                    runtime.requestReport()
-                }
-                button(title: "COPY", systemImage: "doc.on.doc.fill", color: .blue) {
-                    runtime.copyReportToPasteboard()
-                }
+                    button(title: "REC N/I", systemImage: "record.circle", color: .gray) {
+                        runtime.eventBus.emit("record_pressed", owner: "ui_engine", battleID: runtime.battleID, payload: [
+                            "mode": "COMPOSED_OUTPUT"
+                        ])
+                        runtime.recStateText = "REC_NOT_IMPLEMENTED"
+                        runtime.recordingState = .failed
+                        runtime.lastError = "REC capture is not implemented in this MVP."
+                        runtime.eventBus.emit("record_not_implemented", owner: "recording_engine", battleID: runtime.battleID, payload: [
+                            "mode": "REC"
+                        ], errorFlag: true)
+                    }
+                    button(title: "RESET", systemImage: "arrow.counterclockwise", color: .red) {
+                        runtime.resetBattle()
+                    }
+                    button(title: "REPORT", systemImage: "doc.text.magnifyingglass", color: .mint) {
+                        runtime.requestReport()
+                    }
+                    button(title: "COPY", systemImage: "doc.on.doc.fill", color: .blue) {
+                        runtime.copyReportToPasteboard()
+                    }
+                    if includeDebug {
+                        button(title: "DEBUG HIT", systemImage: "burst.fill", color: .orange) {
+                            runtime.debugHit()
+                        }
+                    }
                 }
             }
             .padding(10)
@@ -711,17 +717,16 @@ struct BattleSceneCompositionView: View {
 
     private func button(title: String, systemImage: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 4) {
+            HStack(spacing: 8) {
                 Image(systemName: systemImage)
-                    .font(.headline)
-            Text(title)
-                .font(.caption2.monospaced().bold())
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                    .font(.body.weight(.semibold))
+                Text(title)
+                    .font(.caption.monospaced().bold())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, minHeight: 56)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 10)
             .foregroundStyle(.black)
             .background(color)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -747,6 +752,8 @@ struct BattleSceneCompositionView: View {
 
 struct CameraLayerView: View {
     @ObservedObject var runtime: RuntimeSessionViewModel
+    @State private var gestureBaseZoom: CGFloat = 1.0
+    @State private var zoomGestureActive = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -756,6 +763,29 @@ struct CameraLayerView: View {
                     .scaledToFill()
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
+                    .onAppear {
+                        gestureBaseZoom = runtime.camera.currentZoomFactor
+                    }
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { scale in
+                                if !zoomGestureActive {
+                                    gestureBaseZoom = runtime.camera.currentZoomFactor
+                                    zoomGestureActive = true
+                                }
+                                runtime.camera.setZoomFactor(gestureBaseZoom * scale)
+                            }
+                            .onEnded { scale in
+                                gestureBaseZoom = max(1.0, gestureBaseZoom * scale)
+                                zoomGestureActive = false
+                                runtime.camera.setZoomFactor(gestureBaseZoom)
+                            }
+                    )
+                    .onChange(of: runtime.camera.currentZoomFactor) { newZoomFactor in
+                        if !zoomGestureActive {
+                            gestureBaseZoom = newZoomFactor
+                        }
+                    }
             } else {
                 ZStack {
                     Color.black
@@ -1100,6 +1130,7 @@ struct RuntimeDebugOverlayView: View {
                     .foregroundStyle(.yellow)
                 debugRow("camera", snapshot.cameraStatus)
                 debugRow("camera started", snapshot.cameraStarted ? "YES" : "NO")
+                debugRow("zoom", String(format: "%.2fx", runtime.camera.currentZoomFactor))
                 debugRow("frame rx", runtime.frameReceived ? "YES" : "NO")
                 debugRow("frame count", "\(snapshot.frameCount)")
                 debugRow("last frame", snapshot.lastFrameTimestamp.map { DateFormatter.runtimeReport.string(from: $0) } ?? "NONE")
@@ -1114,6 +1145,10 @@ struct RuntimeDebugOverlayView: View {
                 debugRow("candidate count", "\(snapshot.markerCandidateCount)")
                 debugRow("confidence", String(format: "%.3f", snapshot.lastMarkerConfidence))
                 debugRow("last detect", snapshot.lastMarkerTimestamp.map { DateFormatter.runtimeReport.string(from: $0) } ?? "NONE")
+                debugRow("ref loaded", snapshot.referenceMarkerLoaded ? "YES" : "NO")
+                debugRow("ref path", snapshot.referenceMarkerPath)
+                debugRow("ref print", snapshot.referenceFeaturePrintReady ? "READY" : "NOT READY")
+                debugRow("ref error", snapshot.referenceFeaturePrintError)
                 debugRow("center", String(format: "(%.3f, %.3f)", runtime.markerCenter.x, runtime.markerCenter.y))
                 debugRow("rotation", String(format: "%.3f", runtime.markerRotation))
                 debugRow("scale", String(format: "%.3f", runtime.markerScale))

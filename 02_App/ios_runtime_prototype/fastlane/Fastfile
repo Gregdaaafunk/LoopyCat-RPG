@@ -108,29 +108,32 @@ default_platform(:ios)
 platform :ios do
   desc "Build and upload the Swift runtime prototype to TestFlight"
   lane :beta do
-    ensure_required_environment
-
-    app_identifier = ENV.fetch("APP_IDENTIFIER")
-    team_id = ENV.fetch("APPLE_TEAM_ID")
-    project_path = "LoopyCatRuntimePrototype.xcodeproj"
-    scheme = "LoopyCatRuntimePrototype"
-    output_directory = "build"
-    output_name = "LoopyCatRuntimePrototype.ipa"
-    source_info_plist = "LoopyCatRuntimePrototype/Info.plist"
-    profile_directory = File.join(output_directory, "profiles")
-    profile_name = ENV.fetch("PROVISIONING_PROFILE_NAME", "#{scheme} App Store")
-    keychain_name = "loopycat-ci-#{SecureRandom.hex(8)}"
-    keychain_path = File.expand_path("~/Library/Keychains/#{keychain_name}-db")
-    keychain_password = SecureRandom.hex(32)
     project_root = File.expand_path("..", __dir__)
-    project_path_absolute = File.join(project_root, project_path)
-    output_directory_absolute = File.join(project_root, output_directory)
-    profile_directory_absolute = File.join(project_root, profile_directory)
-    source_info_plist_absolute = File.join(project_root, source_info_plist)
-    signing_directory = File.join(output_directory_absolute, "signing")
-    certificate_path = File.join(signing_directory, "distribution_certificate.p12")
+    repo_root = File.expand_path("../..", project_root)
 
     Dir.chdir(project_root) do
+      sh(File.join(repo_root, "scripts/claude-review-verify.sh"))
+      ensure_required_environment
+
+      app_identifier = ENV.fetch("APP_IDENTIFIER")
+      team_id = ENV.fetch("APPLE_TEAM_ID")
+      project_path = "LoopyCatRuntimePrototype.xcodeproj"
+      scheme = "LoopyCatRuntimePrototype"
+      output_directory = "build"
+      output_name = "LoopyCatRuntimePrototype.ipa"
+      source_info_plist = "LoopyCatRuntimePrototype/Info.plist"
+      profile_directory = File.join(output_directory, "profiles")
+      profile_name = ENV.fetch("PROVISIONING_PROFILE_NAME", "#{scheme} App Store")
+      keychain_name = "loopycat-ci-#{SecureRandom.hex(8)}"
+      keychain_path = File.expand_path("~/Library/Keychains/#{keychain_name}-db")
+      keychain_password = SecureRandom.hex(32)
+      project_path_absolute = File.join(project_root, project_path)
+      output_directory_absolute = File.join(project_root, output_directory)
+      profile_directory_absolute = File.join(project_root, profile_directory)
+      source_info_plist_absolute = File.join(project_root, source_info_plist)
+      signing_directory = File.join(output_directory_absolute, "signing")
+      certificate_path = File.join(signing_directory, "distribution_certificate.p12")
+
       sh("xcodegen generate")
       verify_info_plist_orientations(source_info_plist_absolute, "source Info.plist after xcodegen generate")
       verify_info_plist_launch_screen(source_info_plist_absolute, "source Info.plist after xcodegen generate")

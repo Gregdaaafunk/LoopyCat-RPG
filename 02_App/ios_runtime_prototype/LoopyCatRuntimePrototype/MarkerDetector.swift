@@ -10,20 +10,40 @@ final class RuntimeMarkerDetector {
     private(set) var lastCandidateCount = 0
     private(set) var lastFailureReason = "UNINITIALIZED"
     private(set) var lastDetectionDate: Date?
+    private(set) var referenceMarkerLoaded = false
+    private(set) var referenceMarkerPath = "NONE"
+    private(set) var referenceFeaturePrintReady = false
+    private(set) var referenceFeaturePrintError = "UNINITIALIZED"
 
     init() {
-        if let referenceImage = RuntimeMediaLibrary.image(named: "canonical_marker")?.cgImage {
-            referenceFeaturePrint = Self.generateFeaturePrint(for: referenceImage, context: CIContext())
+        if let referenceURL = RuntimeMediaLibrary.resourceURL(named: "canonical_marker") {
+            referenceMarkerLoaded = true
+            referenceMarkerPath = referenceURL.path
+            guard let referenceImage = UIImage(contentsOfFile: referenceURL.path)?.cgImage else {
+                referenceFeaturePrint = nil
+                referenceFeaturePrintError = "REFERENCE_MARKER_IMAGE_LOAD_FAILED"
+                lastFailureReason = referenceFeaturePrintError
+                return
+            }
+
+            let printResult = Self.generateFeaturePrint(for: referenceImage, context: CIContext())
+            referenceFeaturePrint = printResult.featurePrint
+            referenceFeaturePrintReady = printResult.featurePrint != nil
+            referenceFeaturePrintError = printResult.error ?? "NONE"
+            if !referenceFeaturePrintReady {
+                lastFailureReason = referenceFeaturePrintError
+            }
         } else {
             referenceFeaturePrint = nil
-            lastFailureReason = "MISSING_MARKER_ASSET"
+            referenceFeaturePrintError = "MISSING_MARKER_ASSET"
+            lastFailureReason = referenceFeaturePrintError
         }
     }
 
     func detect(frame: CGImage, orientation: CGImagePropertyOrientation, timestamp: Date) -> RuntimeMarkerObservation? {
         processedFrameCount += 1
         guard let referenceFeaturePrint else {
-            lastFailureReason = "MISSING_REFERENCE_FEATURE_PRINT"
+            lastFailureReason = referenceFeaturePrintError == "NONE" ? "MISSING_REFERENCE_FEATURE_PRINT" : referenceFeaturePrintError
             return nil
         }
 
@@ -55,7 +75,8 @@ final class RuntimeMarkerDetector {
         for candidate in rectangles {
             guard let warped = Self.warpedImage(from: ciImage, rectangle: candidate) else { continue }
             guard let candidateCG = ciContext.createCGImage(warped, from: warped.extent) else { continue }
-            guard let candidatePrint = Self.generateFeaturePrint(for: candidateCG, context: ciContext) else { continue }
+            let candidatePrintResult = Self.generateFeaturePrint(for: candidateCG, context: ciContext)
+            guard let candidatePrint = candidatePrintResult.featurePrint else { continue }
 
             var distance: Float = 0
             do {
@@ -129,15 +150,18 @@ final class RuntimeMarkerDetector {
         return filter.outputImage
     }
 
-    private static func generateFeaturePrint(for image: CGImage, context: CIContext) -> VNFeaturePrintObservation? {
+    private static func generateFeaturePrint(for image: CGImage, context: CIContext) -> (featurePrint: VNFeaturePrintObservation?, error: String?) {
         let request = VNGenerateImageFeaturePrintRequest()
         request.revision = VNGenerateImageFeaturePrintRequestRevision1
         do {
             let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
             try handler.perform([request])
-            return request.results?.first as? VNFeaturePrintObservation
+            if let featurePrint = request.results?.first as? VNFeaturePrintObservation {
+                return (featurePrint, nil)
+            }
+            return (nil, "FEATURE_PRINT_REQUEST_RETURNED_NO_RESULTS")
         } catch {
-            return nil
+            return (nil, "FEATURE_PRINT_GENERATION_ERROR: \(error.localizedDescription)")
         }
     }
 
@@ -177,7 +201,8 @@ final class RuntimeMarkerDetector {
                     }
 
                     candidateCount += 1
-                    guard let candidatePrint = Self.generateFeaturePrint(for: cgImage, context: context) else { continue }
+                    let candidatePrintResult = Self.generateFeaturePrint(for: cgImage, context: context)
+                    guard let candidatePrint = candidatePrintResult.featurePrint else { continue }
 
                     var distance: Float = 0
                     do {

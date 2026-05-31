@@ -7,6 +7,7 @@ cd "$repo_root"
 claude_bin="${CLAUDE_BIN:-claude}"
 model="${CLAUDE_REVIEW_MODEL:-sonnet}"
 max_diff_bytes="${CLAUDE_REVIEW_MAX_DIFF_BYTES:-220000}"
+review_timeout_seconds="${CLAUDE_REVIEW_TIMEOUT_SECONDS:-1800}"
 report_path="${CLAUDE_REVIEW_REPORT:-CLAUDE_REVIEW.md}"
 local_env="${CLAUDE_REVIEW_ENV:-$HOME/.config/claude-review/env}"
 review_id="$(date -u '+%Y%m%dT%H%M%SZ')-$(git rev-parse --short HEAD)"
@@ -172,7 +173,11 @@ PROMPT
 } >> "$prompt_file"
 
 claude_output="$tmp_dir/claude-output.txt"
-"$claude_bin" \
+review_exit=0
+status_line_number=0
+set +e
+timeout --foreground --kill-after=10s "$review_timeout_seconds" \
+  "$claude_bin" \
   --print \
   --model "$model" \
   --permission-mode dontAsk \
@@ -183,19 +188,67 @@ claude_output="$tmp_dir/claude-output.txt"
   --settings "$settings_file" \
   --no-session-persistence \
   --output-format text < "$prompt_file" | tee "$claude_output"
+review_exit="${PIPESTATUS[0]}"
+set -e
 
-status="$(sed -n '1p' "$claude_output" | tr -d '\r')"
-{
-  printf '%s\n\n' "$status"
-  printf 'Review ID: %s\n' "$review_id"
-  printf 'Timestamp: %s\n' "$review_timestamp"
-  printf 'Repository State ID: %s\n' "$repository_state_id"
-  printf 'Approved Tree ID: %s\n' "$approved_tree_id"
-  printf 'Changed Files:\n'
-  "$state_script" changed-files | sed 's/^/- /'
-  printf '\n'
-  sed '1d' "$claude_output"
-} > "$report_path"
+write_report() {
+  local report_status="$1"
+  local report_message="${2:-}"
+
+  {
+    printf '%s\n\n' "$report_status"
+    printf 'Review ID: %s\n' "$review_id"
+    printf 'Timestamp: %s\n' "$review_timestamp"
+    printf 'Repository State ID: %s\n' "$repository_state_id"
+    printf 'Approved Tree ID: %s\n' "$approved_tree_id"
+    printf 'Claude Exit Code: %s\n' "$review_exit"
+    printf 'Changed Files:\n'
+    "$state_script" changed-files | sed 's/^/- /'
+    if [ -n "$report_message" ]; then
+      printf '\nError: %s\n' "$report_message"
+    fi
+    if [ -s "$claude_output" ]; then
+      printf '\n'
+      if [ "$status_line_number" -gt 0 ]; then
+        tail -n +"$((status_line_number + 1))" "$claude_output"
+      else
+        cat "$claude_output"
+      fi
+    fi
+  } > "$report_path"
+}
+
+status="ERROR"
+report_message=""
+
+if [ "$review_exit" -eq 0 ] && [ -s "$claude_output" ]; then
+  status="$(awk 'NF { gsub(/\r$/, ""); print; exit }' "$claude_output")"
+  status_line_number="$(awk 'NF { print NR; exit }' "$claude_output")"
+  status_line_number="${status_line_number:-0}"
+  case "$status" in
+    APPROVED|NEEDS_FIXES|REJECTED)
+      ;;
+    *)
+      report_message="Claude returned an invalid status: $status"
+      status="ERROR"
+      ;;
+  esac
+else
+  case "$review_exit" in
+    124)
+      report_message="Claude review timed out after ${review_timeout_seconds}s."
+      ;;
+    *)
+      if [ -s "$claude_output" ]; then
+        report_message="Claude review failed with exit code ${review_exit}."
+      else
+        report_message="Claude review produced no output."
+      fi
+      ;;
+  esac
+fi
+
+write_report "$status" "$report_message"
 
 case "$status" in
   APPROVED)
@@ -205,8 +258,8 @@ case "$status" in
     echo "Claude review returned $status. Fixes are required before commit/push/deploy." >&2
     exit 1
     ;;
-  *)
-    echo "Claude review returned an invalid status: $status" >&2
+  ERROR)
+    echo "Claude review failed: ${report_message:-unknown error}" >&2
     exit 5
     ;;
 esac

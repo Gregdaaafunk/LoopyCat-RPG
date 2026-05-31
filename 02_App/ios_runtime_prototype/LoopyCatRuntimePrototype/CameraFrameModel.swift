@@ -15,6 +15,7 @@ final class CameraFrameModel: NSObject, ObservableObject {
     @Published var lastFrameDate: Date?
     @Published var currentOrientation = CGImagePropertyOrientation.right
     @Published var currentVideoOrientation = AVCaptureVideoOrientation.portrait
+    @Published var currentZoomFactor: CGFloat = 1.0
 
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "loopycat.camera.session")
@@ -23,6 +24,7 @@ final class CameraFrameModel: NSObject, ObservableObject {
     private var isConfigured = false
     private var output: AVCaptureVideoDataOutput?
     private var cameraPosition: AVCaptureDevice.Position = .back
+    private var activeCameraDevice: AVCaptureDevice?
 
     func start() {
         status = "REQUESTING_CAMERA"
@@ -85,6 +87,30 @@ final class CameraFrameModel: NSObject, ObservableObject {
         }
     }
 
+    func resetZoom() {
+        setZoomFactor(1.0)
+    }
+
+    func setZoomFactor(_ zoomFactor: CGFloat) {
+        let clamped = max(1.0, zoomFactor)
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.activeCameraDevice else { return }
+            let appliedZoom = max(1.0, min(clamped, device.activeFormat.videoMaxZoomFactor))
+            do {
+                try device.lockForConfiguration()
+                device.videoZoomFactor = appliedZoom
+                device.unlockForConfiguration()
+                DispatchQueue.main.async {
+                    self.currentZoomFactor = appliedZoom
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.lastError = error.localizedDescription
+                }
+            }
+        }
+    }
+
     private func configureAndStart() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
@@ -120,6 +146,7 @@ final class CameraFrameModel: NSObject, ObservableObject {
             throw CameraError.noBackCamera
         }
         cameraPosition = .back
+        activeCameraDevice = camera
 
         let input = try AVCaptureDeviceInput(device: camera)
         guard session.canAddInput(input) else {
@@ -142,6 +169,17 @@ final class CameraFrameModel: NSObject, ObservableObject {
 
         if let connection = output.connection(with: .video), connection.isVideoOrientationSupported {
             connection.videoOrientation = currentVideoOrientation
+        }
+
+        do {
+            try camera.lockForConfiguration()
+            camera.videoZoomFactor = 1.0
+            camera.unlockForConfiguration()
+            DispatchQueue.main.async {
+                self.currentZoomFactor = 1.0
+            }
+        } catch {
+            throw error
         }
 
         session.commitConfiguration()

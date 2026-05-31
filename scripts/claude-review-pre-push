@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+report_path="${CLAUDE_REVIEW_REPORT:-CLAUDE_REVIEW.md}"
+
+if [ "${CLAUDE_REVIEW_BYPASS:-}" = "1" ]; then
+  echo "CLAUDE_REVIEW_BYPASS=1 set; skipping Claude review push gate." >&2
+  exit 0
+fi
+
+if [ ! -f "$report_path" ]; then
+  echo "Claude review gate blocked push: missing $report_path." >&2
+  echo "Run scripts/klavdia-review.sh and push only after APPROVED." >&2
+  exit 1
+fi
+
+"$repo_root/scripts/claude-review-verify.sh"
+
+echo "Claude review gate: APPROVED for push."

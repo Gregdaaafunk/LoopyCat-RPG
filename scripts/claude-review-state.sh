@@ -6,6 +6,23 @@ cd "$repo_root"
 
 report_path="${CLAUDE_REVIEW_REPORT:-CLAUDE_REVIEW.md}"
 
+report_pathspec() {
+  case "$report_path" in
+    "$repo_root"/*)
+      printf '%s\n' "${report_path#"$repo_root"/}"
+      ;;
+    /*)
+      return 1
+      ;;
+    ./*)
+      printf '%s\n' "${report_path#./}"
+      ;;
+    *)
+      printf '%s\n' "$report_path"
+      ;;
+  esac
+}
+
 hash_stream() {
   if command -v shasum >/dev/null 2>&1; then
     shasum -a 256 | awk '{print $1}'
@@ -15,19 +32,25 @@ hash_stream() {
 }
 
 changed_files() {
+  local report_file
+  report_file="$(report_pathspec || true)"
   {
     git diff --name-only --diff-filter=ACMRD -- .
     git diff --cached --name-only --diff-filter=ACMRD -- .
     git ls-files --others --exclude-standard
-  } | sort -u | grep -v -x "$report_path" || true
+  } | sort -u | grep -Fvx "$report_file" || true
 }
 
-file_mode() {
+content_files() {
+  local report_file
+  report_file="$(report_pathspec || true)"
+  git ls-files --cached --others --exclude-standard | sort -u | grep -Fvx "$report_file" || true
+}
+
+worktree_mode() {
   local file="$1"
-  local tracked_mode
-  tracked_mode="$(git ls-files -s -- "$file" | awk '{print $1}' | sed -n '1p')"
-  if [ -n "$tracked_mode" ]; then
-    printf '%s' "$tracked_mode"
+  if [ -L "$file" ]; then
+    printf '120000'
   elif [ -x "$file" ]; then
     printf '100755'
   else
@@ -37,39 +60,29 @@ file_mode() {
 
 current_content_id() {
   {
-    printf 'HEAD %s\n' "$(git rev-parse HEAD)"
-    changed_files | while IFS= read -r file; do
-      [ -z "$file" ] && continue
-      if [ -e "$file" ]; then
-        printf 'F %s %s %s\n' "$(file_mode "$file")" "$(git hash-object --no-filters -- "$file")" "$file"
-      else
-        printf 'D %s\n' "$file"
-      fi
+    content_files | while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      [ -e "$file" ] || continue
+      printf 'F %s %s %s\n' "$(worktree_mode "$file")" "$(git hash-object --no-filters -- "$file")" "$file"
     done
   } | hash_stream
 }
 
 staged_content_id() {
   {
-    printf 'HEAD %s\n' "$(git rev-parse HEAD)"
-    git diff --cached --name-only --diff-filter=ACMRD -- . | sort -u | grep -v -x "$report_path" | while IFS= read -r file; do
-      [ -z "$file" ] && continue
-      if git diff --cached --name-only --diff-filter=D -- "$file" | grep -qx "$file"; then
-        printf 'D %s\n' "$file"
-      else
-        git ls-files -s -- "$file" | awk -v path="$file" '{print "F " $1 " " $2 " " path}' | sed -n '1p'
-      fi
+    content_files | while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      git ls-files -s -- "$file" | while read -r mode object stage indexed_file; do
+        [ -n "$indexed_file" ] || continue
+        printf 'F %s %s %s\n' "$mode" "$object" "$indexed_file"
+      done
     done
   } | hash_stream
 }
 
 state_id() {
   {
-    printf 'HEAD %s\n' "$(git rev-parse HEAD)"
-    printf 'APPROVED_CONTENT %s\n' "$(current_content_id)"
-    changed_files | while IFS= read -r file; do
-      [ -n "$file" ] && printf 'CHANGED %s\n' "$file"
-    done
+    printf 'CONTENT_TREE %s\n' "$(current_content_id)"
   } | hash_stream
 }
 

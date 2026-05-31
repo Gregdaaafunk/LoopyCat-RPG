@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec /home/gregdafunk/Downloads/LoopyCat-RPG/scripts/loopycatrpg.sh "$@"

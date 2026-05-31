@@ -38,6 +38,7 @@ Klavdia may not:
 - Access secrets
 - Access credentials
 - Modify external accounts
+- Write to GitHub repositories
 
 ## Review Output
 
@@ -103,4 +104,40 @@ Do not approve weak solutions.
 
 ## Gate Rule
 
-No commit, push, GitHub Actions run, TestFlight upload, or release may proceed unless the current repository state matches the state approved by Klavdia.
+No commit may proceed unless the current repository state matches the state approved by Klavdia.
+
+Klavdia APPROVED does not automatically authorize push, GitHub Actions, TestFlight upload, or release.
+
+Before push or deploy, Kolyan must verify:
+
+- approval belongs to the latest code state
+- no files changed after review
+- review timestamp is newer than the final implementation
+
+If any code changes after APPROVED, the approval is invalid and a new Klavdia review is mandatory.
+
+## Live Review Mode
+
+Use `scripts/klavdia-review.sh` for visible live review output.
+Use `Klavdia` to open the dedicated live reviewer terminal.
+Use `loopycatrpg` to start the full Kolyan plus live Klavdia workflow from a fresh shell.
+
+Live review mode prints progress lines such as:
+
+- `Klavdia reviewing...`
+- `Reading changed files...`
+- `Checking SwiftUI layout...`
+- `Checking architecture...`
+- `Checking diagnostics...`
+- `Checking deployment risks...`
+- `Generating findings...`
+- `Generating final report...`
+
+The live mode is intended to let Greg watch the review process in real time instead of seeing only the final status line.
+
+## Terminal Contract
+
+- Klavdia has no push authority.
+- Klavdia has no deploy authority.
+- Klavdia has no secrets authority.
+- Klavdia has no GitHub write authority.

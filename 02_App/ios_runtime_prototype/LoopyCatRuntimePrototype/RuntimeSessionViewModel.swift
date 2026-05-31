@@ -20,7 +20,7 @@ final class RuntimeSessionViewModel: ObservableObject {
     @Published var portalState: RuntimePortalState = .idle
     @Published var recordingState: RuntimeRecordingState = .ready
     @Published var photoStateText = "PHOTO_COMPOSED_UNKNOWN"
-    @Published var recStateText = "REC_COMPOSED_UNKNOWN"
+    @Published var recStateText = "REC_NOT_IMPLEMENTED"
     @Published var debugOverlayEnabled = false
     @Published var showReportSheet = false
     @Published var showLastSessionReportSheet = false
@@ -65,6 +65,10 @@ final class RuntimeSessionViewModel: ObservableObject {
     @Published var hitIgnoreActive = false
     @Published var anchorActive = false
     @Published var anchorMemory: RuntimeAnchorMemory?
+    @Published var referenceMarkerLoaded = false
+    @Published var referenceMarkerPath = "NONE"
+    @Published var referenceFeaturePrintReady = false
+    @Published var referenceFeaturePrintError = "UNINITIALIZED"
 
     @Published var cameraPermissionState = "UNKNOWN"
     @Published var photosPermissionState = "UNKNOWN"
@@ -111,12 +115,17 @@ final class RuntimeSessionViewModel: ObservableObject {
         inventory = saveStore.loadInventory()
         catProfile = saveStore.loadCatProfile()
         debugOverlayEnabled = false
+        referenceMarkerLoaded = markerDetector.referenceMarkerLoaded
+        referenceMarkerPath = markerDetector.referenceMarkerPath
+        referenceFeaturePrintReady = markerDetector.referenceFeaturePrintReady
+        referenceFeaturePrintError = markerDetector.referenceFeaturePrintError
         if let previousReport = saveStore.loadLastSessionReport() {
             lastSessionReportText = previousReport
             showLastSessionReportSheet = true
         }
         orientation.forcePortraitLaunch()
         camera.updateOrientation(.portrait)
+        camera.resetZoom()
 
         if let catProfile {
             catDraftName = catProfile.name
@@ -146,6 +155,7 @@ final class RuntimeSessionViewModel: ObservableObject {
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         orientation.forcePortraitLaunch()
         camera.updateOrientation(.portrait)
+        camera.resetZoom()
         cameraStarted = true
         camera.start()
         cameraPermissionState = permissionString(for: AVCaptureDevice.authorizationStatus(for: .video))
@@ -473,6 +483,10 @@ final class RuntimeSessionViewModel: ObservableObject {
             markerFoundCount: markerFoundCount,
             lastMarkerConfidence: markerConfidence,
             lastMarkerTimestamp: lastMarkerTimestamp == .distantPast ? nil : lastMarkerTimestamp,
+            referenceMarkerLoaded: referenceMarkerLoaded,
+            referenceMarkerPath: referenceMarkerPath,
+            referenceFeaturePrintReady: referenceFeaturePrintReady,
+            referenceFeaturePrintError: referenceFeaturePrintError,
             trackingState: trackingState.rawValue,
             trackingLastSeenAge: lastSeenAge,
             anchorActive: anchorActive,
@@ -529,6 +543,10 @@ final class RuntimeSessionViewModel: ObservableObject {
         lines.append("marker_found_count: \(snapshot.markerFoundCount)")
         lines.append("last_marker_confidence: \(snapshot.lastMarkerConfidence)")
         lines.append("last_marker_timestamp: \(snapshot.lastMarkerTimestamp.map { DateFormatter.runtimeReport.string(from: $0) } ?? "NONE")")
+        lines.append("reference_marker_loaded: \(snapshot.referenceMarkerLoaded)")
+        lines.append("reference_marker_path: \(snapshot.referenceMarkerPath)")
+        lines.append("reference_feature_print_ready: \(snapshot.referenceFeaturePrintReady)")
+        lines.append("reference_feature_print_error: \(snapshot.referenceFeaturePrintError)")
         lines.append("tracking_state: \(snapshot.trackingState)")
         lines.append("tracking_last_seen_age: \(snapshot.trackingLastSeenAge)")
         lines.append("anchor_active: \(snapshot.anchorActive)")
@@ -587,7 +605,7 @@ final class RuntimeSessionViewModel: ObservableObject {
         portalState = .idle
         recordingState = .ready
         photoStateText = "PHOTO_COMPOSED_UNKNOWN"
-        recStateText = "REC_COMPOSED_UNKNOWN"
+        recStateText = "REC_NOT_IMPLEMENTED"
         markerFound = false
         markerCandidateCount = 0
         markerConfidence = 0

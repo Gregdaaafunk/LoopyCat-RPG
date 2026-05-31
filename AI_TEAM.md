@@ -6,59 +6,36 @@ This document defines the permanent AI team structure for LoopyCat-RPG.
 
 Greg
 
-Responsibilities:
+## Matroskin (GPT)
 
-- Product vision
-- Feature decisions
-- Testing
-- Final approval
+Strategy, architecture, systems design, analysis, long-term product direction.
 
-## Strategist
+## Kolyan (Codex)
 
-Matroskin (GPT)
+Implementation engineer.
 
-Responsibilities:
+Responsible for coding, debugging, maintenance, builds, GitHub operations, and TestFlight deployment.
 
-- Architecture
-- Systems design
-- Gameplay design
-- Diagnostics design
-- Long-term planning
+## Klavdia (Claude Code)
 
-## Implementation Engineer
+Reviewer, architecture auditor, quality gate, risk auditor.
 
-Kolyan (Codex)
+## Klavdia Permissions
 
-Responsibilities:
+- no push authority
+- no deploy authority
+- no secrets access
+- no GitHub write authority
 
-- Implementation
-- Debugging
-- Maintenance
-- Builds
-- GitHub operations
-- TestFlight deployment
+## Klavdia Responsibilities
 
-Codex is referred to as Kolyan inside this project.
-
-## Reviewer And Architecture Auditor
-
-Klavdia (Claude Code)
-
-Responsibilities:
-
-- Code review
-- Architecture review
+- code review
+- architecture review
 - SwiftUI review
-- Diagnostics review
-- Deployment risk review
-- Quality control
-
-Claude Code is referred to as Klavdia inside this project.
-
-Klavdia has no deployment authority.
-Klavdia has no push authority.
-Klavdia has no access to secrets.
-Klavdia acts only as reviewer, architecture auditor, quality gate, and risk auditor.
+- bug detection
+- deployment risk review
+- improvement recommendations
+- quality gate approval
 
 ## Workflow
 
@@ -66,6 +43,34 @@ Kolyan implements.
 
 Klavdia reviews.
 
-Only APPROVED code may proceed to commit, push, GitHub Actions, and TestFlight.
+If Klavdia returns NEEDS_FIXES or REJECTED:
 
-APPROVED must apply to the exact repository state being committed and deployed.
+- fix issues
+- rerun review
+- repeat until APPROVED
+
+## Startup Commands
+
+- `loopycatrpg` starts the Kolyan implementation terminal, restores the project workflow, and opens live Klavdia review.
+- `loopycatrpg` is the only official startup command for the full environment.
+
+## Review Rule
+
+Klavdia APPROVED is required before commit.
+
+Klavdia APPROVED does not automatically authorize push or TestFlight deployment.
+
+Before push or deploy, Kolyan must verify:
+
+- approval belongs to the latest code state
+- no files changed after review
+- approval timestamp is newer than the final implementation
+
+If code changes after APPROVED:
+
+- APPROVED becomes invalid
+- a new Klavdia review is mandatory
+
+## Deployment Rule
+
+- No GitHub push, GitHub Actions, or TestFlight deployment until Klavdia returns APPROVED for the final code state.

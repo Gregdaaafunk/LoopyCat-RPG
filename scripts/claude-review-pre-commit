@@ -5,7 +5,6 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 report_path="${CLAUDE_REVIEW_REPORT:-CLAUDE_REVIEW.md}"
-state_script="$repo_root/scripts/claude-review-state.sh"
 
 if [ "${CLAUDE_REVIEW_BYPASS:-}" = "1" ]; then
   echo "CLAUDE_REVIEW_BYPASS=1 set; skipping Claude review gate." >&2
@@ -22,57 +21,6 @@ if [ ! -f "$report_path" ]; then
   exit 1
 fi
 
-status="$(sed -n '1p' "$report_path" | tr -d '\r')"
-if [ "$status" != "APPROVED" ]; then
-  echo "Claude review gate blocked commit: $report_path status is '$status', not APPROVED." >&2
-  exit 1
-fi
-
-approved_tree="$(sed -n 's/^Approved Tree ID: //p' "$report_path" | tr -d '\r' | sed -n '1p')"
-approved_state="$(sed -n 's/^Repository State ID: //p' "$report_path" | tr -d '\r' | sed -n '1p')"
-current_tree="$("$state_script" approved-tree-id)"
-current_state="$("$state_script" state-id)"
-staged_tree="$("$state_script" staged-tree-id)"
-
-if [ -z "$approved_tree" ] || [ -z "$approved_state" ]; then
-  echo "Claude review gate blocked commit: $report_path is missing repository state metadata." >&2
-  echo "Re-run scripts/claude-review.sh with the current review gate." >&2
-  exit 1
-fi
-
-if [ "$current_state" != "$approved_state" ]; then
-  echo "Claude review gate blocked commit: repository state changed after Klavdia APPROVED." >&2
-  echo "Approved state: $approved_state" >&2
-  echo "Current state:  $current_state" >&2
-  echo "Re-run scripts/claude-review.sh after the latest file changes." >&2
-  exit 1
-fi
-
-if [ "$staged_tree" != "$approved_tree" ]; then
-  echo "Claude review gate blocked commit: staged commit does not match the APPROVED content." >&2
-  echo "Stage every file reviewed by Klavdia, including added/deleted files, and do not stage unrelated files." >&2
-  echo "Approved content: $approved_tree" >&2
-  echo "Staged content:   $staged_tree" >&2
-  exit 1
-fi
-
-newest_change_epoch="$(
-  {
-    git diff --cached --name-only --diff-filter=ACMR -- .
-    git diff --name-only --diff-filter=ACMR -- .
-    git ls-files --others --exclude-standard
-  } | while IFS= read -r file; do
-    [ -n "$file" ] && [ -e "$file" ] && stat -c '%Y' "$file"
-  done | sort -nr | sed -n '1p'
-)"
-
-if [ -n "$newest_change_epoch" ]; then
-  report_epoch="$(stat -c '%Y' "$report_path")"
-  if [ "$report_epoch" -lt "$newest_change_epoch" ]; then
-    echo "Claude review gate blocked commit: $report_path is older than local changes." >&2
-    echo "Re-run scripts/claude-review.sh after your latest edits." >&2
-    exit 1
-  fi
-fi
+"$repo_root/scripts/claude-review-verify.sh"
 
 echo "Claude review gate: APPROVED."

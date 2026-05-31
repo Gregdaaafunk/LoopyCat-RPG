@@ -156,23 +156,28 @@ final class RuntimeSaveStore {
 enum RuntimeMediaLibrary {
     private static var imageCache: [String: UIImage] = [:]
 
-    static func image(named resourceName: String) -> UIImage? {
-        if let cached = imageCache[resourceName] {
-            return cached
-        }
+    static func resourceURL(named resourceName: String) -> URL? {
         guard let bundleURL = Bundle.main.resourceURL else { return nil }
         let enumerator = FileManager.default.enumerator(at: bundleURL, includingPropertiesForKeys: nil)
         while let item = enumerator?.nextObject() as? URL {
             let baseName = item.deletingPathExtension().lastPathComponent
             if baseName == resourceName {
-                let image = UIImage(contentsOfFile: item.path)
-                if let image {
-                    imageCache[resourceName] = image
-                }
-                return image
+                return item
             }
         }
         return nil
+    }
+
+    static func image(named resourceName: String) -> UIImage? {
+        if let cached = imageCache[resourceName] {
+            return cached
+        }
+        guard let resourceURL = resourceURL(named: resourceName) else { return nil }
+        let image = UIImage(contentsOfFile: resourceURL.path)
+        if let image {
+            imageCache[resourceName] = image
+        }
+        return image
     }
 
     static func data(named resourceName: String) -> Data? {
@@ -193,10 +198,14 @@ final class OrientationCoordinator: ObservableObject {
     @Published private(set) var currentOrientation: UIInterfaceOrientation = .portrait
     @Published private(set) var launchOrientation: UIInterfaceOrientation = .portrait
     @Published private(set) var history: [String] = []
+    private var landscapeLockedUntilPortraitRotation = true
+    private var launchDeviceOrientation: UIDeviceOrientation = .unknown
 
     func forcePortraitLaunch() {
         launchOrientation = .portrait
         currentOrientation = .portrait
+        landscapeLockedUntilPortraitRotation = true
+        launchDeviceOrientation = UIDevice.current.orientation
         UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
         UIViewController.attemptRotationToDeviceOrientation()
         record("portrait_launch")
@@ -204,6 +213,22 @@ final class OrientationCoordinator: ObservableObject {
 
     func update(from deviceOrientation: UIDeviceOrientation) {
         let mapped = Self.interfaceOrientation(from: deviceOrientation)
+        if landscapeLockedUntilPortraitRotation {
+            if mapped == .portrait || mapped == .portraitUpsideDown {
+                landscapeLockedUntilPortraitRotation = false
+            } else if mapped == .landscapeLeft || mapped == .landscapeRight {
+                let launchedInLandscape = launchDeviceOrientation == .landscapeLeft || launchDeviceOrientation == .landscapeRight
+                if launchedInLandscape {
+                    return
+                }
+                landscapeLockedUntilPortraitRotation = false
+            } else {
+                return
+            }
+        }
+        if mapped == .unknown {
+            return
+        }
         guard mapped != currentOrientation else { return }
         currentOrientation = mapped
         record("orientation_changed \(mapped.runtimeString)")
@@ -272,7 +297,7 @@ final class OrientationCoordinator: ObservableObject {
         case .landscapeRight:
             return .landscapeLeft
         default:
-            return .portrait
+            return .unknown
         }
     }
 }

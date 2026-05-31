@@ -236,6 +236,10 @@ struct RuntimeDiagnosticsSnapshot: Codable {
     var markerFoundCount: Int
     var lastMarkerConfidence: Double
     var lastMarkerTimestamp: Date?
+    var referenceMarkerLoaded: Bool
+    var referenceMarkerPath: String
+    var referenceFeaturePrintReady: Bool
+    var referenceFeaturePrintError: String
     var trackingState: String
     var trackingLastSeenAge: Double
     var anchorActive: Bool
