@@ -31,7 +31,7 @@ final class RuntimeSessionViewModel: ObservableObject {
     @Published var catDraftName = ""
     @Published var catDraftTitle = ""
     @Published var catDraftPhoto: UIImage?
-    @Published var selectedBoss: RuntimeBossDefinition = RuntimeAssetCatalog.bossDefinitions.first ?? RuntimeBossDefinition(id: "boss01", displayName: "Boss 01", sheetResource: "boss01_raw_sheet", accentHex: "#D95CFF", subtitle: "Prototype Menace", lootSetName: "toy_emperor")
+    @Published var selectedBoss: RuntimeBossDefinition = RuntimeAssetCatalog.bossDefinitions.first ?? RuntimeBossDefinition(id: "djinn01", displayName: "Marker Djinn", sheetResource: "full_boss_1", portraitResource: "Portrait_dead_1", accentHex: "#FFD166", subtitle: "Ancient Artifact Spirit", lootSetName: "arcane_regalia")
     @Published var currentLoot: RuntimeLootItem?
     @Published var inventory: [RuntimeLootItem] = []
     @Published var settings: RuntimeSettings
@@ -105,10 +105,13 @@ final class RuntimeSessionViewModel: ObservableObject {
     private var lockConfirmedDate: Date?
     private var portalOpenTask: Task<Void, Never>?
     private var victoryTask: Task<Void, Never>?
+    private var idleResetTask: Task<Void, Never>?
+    private var idleResetGeneration = 0
     private var hitIgnoreUntil: Date?
     private var defeatSequenceUntil: Date?
     private var cameraStartEventSent = false
     private var deviceOrientationTokens: [NSObjectProtocol] = []
+    private let bossImageCache = NSCache<NSString, UIImage>()
 
     init() {
         settings = saveStore.loadSettings()
@@ -126,6 +129,7 @@ final class RuntimeSessionViewModel: ObservableObject {
         orientation.forcePortraitLaunch()
         camera.updateOrientation(.portrait)
         camera.resetZoom()
+        bossImageCache.countLimit = 24
 
         if let catProfile {
             catDraftName = catProfile.name
@@ -170,6 +174,14 @@ final class RuntimeSessionViewModel: ObservableObject {
             "screen": appScreen.rawValue,
             "orientation": orientation.currentOrientation.runtimeString
         ])
+        let animationFailures = RuntimeAssetCatalog.animationFrameValidationFailures
+        if !animationFailures.isEmpty {
+            lastFailureReason = "ASSET_ANIMATION_FRAMES_EMPTY: \(animationFailures.joined(separator: ","))"
+        }
+        eventBus.emit("asset_catalog_validated", owner: "asset_engine", battleID: battleID, payload: [
+            "animation_states": "\(RuntimeBossAnimationState.allCases.count)",
+            "empty_animation_states": animationFailures.isEmpty ? "NONE" : animationFailures.joined(separator: ",")
+        ], errorFlag: !animationFailures.isEmpty)
         persistDiagnosticReport(reason: "launch")
     }
 
@@ -334,6 +346,15 @@ final class RuntimeSessionViewModel: ObservableObject {
         eventBus.emit("debug_hit_pressed", owner: "ui_engine", battleID: battleID, payload: [:])
     }
 
+    func playerAttack() {
+        let kind: RuntimeHitKind = Int.random(in: 0..<7) == 0 ? .critical : .normal
+        let target = anchorMemory.map { CGPoint(x: $0.x, y: $0.y) } ?? CGPoint(x: 0.5, y: 0.54)
+        applyHit(kind: kind, source: "CAT_ATTACK", sourceConfidence: markerConfidence, normalizedLocation: target)
+        eventBus.emit("cat_attack_pressed", owner: "combat_engine", battleID: battleID, payload: [
+            "kind": kind.rawValue
+        ])
+    }
+
     func requestReport() {
         persistDiagnosticReport(reason: "diagnostics_opened")
         showReportSheet = true
@@ -398,6 +419,42 @@ final class RuntimeSessionViewModel: ObservableObject {
 
     func bossImage() -> UIImage? {
         RuntimeMediaLibrary.image(named: selectedBoss.sheetResource)
+    }
+
+    func bossPortraitImage() -> UIImage? {
+        RuntimeMediaLibrary.image(named: selectedBoss.portraitResource) ?? bossImage()
+    }
+
+    func bossAnimationImage(at time: TimeInterval) -> UIImage {
+        let frameName = RuntimeAssetCatalog.frameName(for: bossAnimationState, time: time)
+        let cacheKey = "frame:\(frameName)" as NSString
+        if let cached = bossImageCache.object(forKey: cacheKey) {
+            return cached
+        }
+        if let image = RuntimeMediaLibrary.image(named: frameName) {
+            bossImageCache.setObject(image, forKey: cacheKey)
+            return image
+        }
+        return fallbackBossImage()
+    }
+
+    func bossEffectImage(at time: TimeInterval) -> UIImage {
+        let frames = RuntimeAssetCatalog.dissolveFrames
+        let index = Int(time * 10.0) % frames.count
+        let frameName = frames[index]
+        let cacheKey = "effect:\(frameName)" as NSString
+        if let cached = bossImageCache.object(forKey: cacheKey) {
+            return cached
+        }
+        if let image = RuntimeMediaLibrary.image(named: frameName) {
+            bossImageCache.setObject(image, forKey: cacheKey)
+            return image
+        }
+        if let image = RuntimeMediaLibrary.image(named: RuntimeAssetCatalog.dissolveFrames.first ?? RuntimeAssetCatalog.fallbackBossFrame) {
+            bossImageCache.setObject(image, forKey: cacheKey)
+            return image
+        }
+        return fallbackBossImage()
     }
 
     func lootImage() -> UIImage? {
@@ -465,6 +522,7 @@ final class RuntimeSessionViewModel: ObservableObject {
             launchOrientation: orientation.launchOrientation.runtimeString,
             currentOrientation: orientation.currentOrientation.runtimeString,
             orientationChanges: orientation.history,
+            cameraZoomFactor: Double(camera.currentZoomFactor),
             cameraPermission: cameraPermissionState,
             photosPermission: photosPermissionState,
             cameraStarted: cameraStarted,
@@ -481,6 +539,7 @@ final class RuntimeSessionViewModel: ObservableObject {
             lastDetectorFrameTimestamp: lastDetectorFrameTimestamp,
             markerCandidateCount: markerCandidateCount,
             markerFoundCount: markerFoundCount,
+            markerCurrentFound: markerFound,
             lastMarkerConfidence: markerConfidence,
             lastMarkerTimestamp: lastMarkerTimestamp == .distantPast ? nil : lastMarkerTimestamp,
             referenceMarkerLoaded: referenceMarkerLoaded,
@@ -488,6 +547,7 @@ final class RuntimeSessionViewModel: ObservableObject {
             referenceFeaturePrintReady: referenceFeaturePrintReady,
             referenceFeaturePrintError: referenceFeaturePrintError,
             trackingState: trackingState.rawValue,
+            trackingLossReason: lastFailureReason,
             trackingLastSeenAge: lastSeenAge,
             anchorActive: anchorActive,
             anchorAge: anchorAge,
@@ -527,6 +587,7 @@ final class RuntimeSessionViewModel: ObservableObject {
         lines.append("iOS_version: \(snapshot.systemVersion)")
         lines.append("launch_orientation: \(snapshot.launchOrientation)")
         lines.append("final_orientation: \(snapshot.currentOrientation)")
+        lines.append("camera_zoom_factor: \(String(format: "%.2f", snapshot.cameraZoomFactor))")
         lines.append("camera_permission: \(snapshot.cameraPermission)")
         lines.append("photos_permission: \(snapshot.photosPermission)")
         lines.append("camera_started: \(snapshot.cameraStarted)")
@@ -541,6 +602,7 @@ final class RuntimeSessionViewModel: ObservableObject {
         lines.append("last_detector_frame_time: \(snapshot.lastDetectorFrameTimestamp.map { DateFormatter.runtimeReport.string(from: $0) } ?? "NONE")")
         lines.append("marker_candidate_count: \(snapshot.markerCandidateCount)")
         lines.append("marker_found_count: \(snapshot.markerFoundCount)")
+        lines.append("marker_current_found: \(snapshot.markerCurrentFound)")
         lines.append("last_marker_confidence: \(snapshot.lastMarkerConfidence)")
         lines.append("last_marker_timestamp: \(snapshot.lastMarkerTimestamp.map { DateFormatter.runtimeReport.string(from: $0) } ?? "NONE")")
         lines.append("reference_marker_loaded: \(snapshot.referenceMarkerLoaded)")
@@ -548,6 +610,7 @@ final class RuntimeSessionViewModel: ObservableObject {
         lines.append("reference_feature_print_ready: \(snapshot.referenceFeaturePrintReady)")
         lines.append("reference_feature_print_error: \(snapshot.referenceFeaturePrintError)")
         lines.append("tracking_state: \(snapshot.trackingState)")
+        lines.append("tracking_loss_reason: \(snapshot.trackingLossReason)")
         lines.append("tracking_last_seen_age: \(snapshot.trackingLastSeenAge)")
         lines.append("anchor_active: \(snapshot.anchorActive)")
         lines.append("anchor_x: \(snapshot.anchorX)")
@@ -587,15 +650,27 @@ final class RuntimeSessionViewModel: ObservableObject {
             "screen": appScreen.rawValue
         ])
         eventBus.emit("detector_started", owner: "tracking_engine", battleID: battleID, payload: [
-            "marker": "canonical_marker"
+            "marker": "loopycat_arc_marker"
         ])
     }
 
     private func selectBoss() {
         let candidates = RuntimeAssetCatalog.bossDefinitions.filter { $0.id != selectedBoss.id }
         selectedBoss = candidates.randomElement() ?? RuntimeAssetCatalog.bossDefinitions.randomElement() ?? selectedBoss
+        invalidateBossImageCache()
         bossMaxHP = 100 + Int.random(in: 0...40)
         bossHP = bossMaxHP
+    }
+
+    private func invalidateBossImageCache() {
+        bossImageCache.removeAllObjects()
+    }
+
+    private func fallbackBossImage() -> UIImage {
+        if let image = bossImage() ?? RuntimeMediaLibrary.image(named: RuntimeAssetCatalog.fallbackBossFrame) {
+            return image
+        }
+        return UIImage(systemName: "exclamationmark.triangle.fill") ?? UIImage()
     }
 
     private func resetBattleState() {
@@ -637,6 +712,7 @@ final class RuntimeSessionViewModel: ObservableObject {
         portalPulse = 0
         screenFlash = false
         cameraShakeIntensity = 0
+        invalidateBossImageCache()
         bossSwayPhase = 0
         bossBreathScale = 1
         bossLookOffset = .zero
@@ -753,7 +829,7 @@ final class RuntimeSessionViewModel: ObservableObject {
             lossDuration = trackingLastSeenAge
 
             if anchorActive {
-                if lossDuration < 1.5 {
+                if lossDuration < 2.8 {
                     if trackingState != .trackingMemory {
                         trackingState = .trackingMemory
                         battleMessage = "LOCK STABLE"
@@ -764,14 +840,22 @@ final class RuntimeSessionViewModel: ObservableObject {
                             "loss_duration": String(format: "%.2f", lossDuration)
                         ])
                     }
-                } else if lossDuration < 5.0 {
+                } else if lossDuration < 8.0 {
                     if trackingState != .signalUnstable {
                         trackingState = .signalUnstable
                         battleMessage = "SIGNAL UNSTABLE"
+                        eventBus.emit("tracking_unstable", owner: "tracking_engine", battleID: battleID, payload: [
+                            "loss_duration": String(format: "%.2f", lossDuration),
+                            "reason": lastFailureReason
+                        ])
                     }
                 } else {
                     trackingState = .lost
                     battleMessage = "SHOW MARKER AGAIN"
+                    eventBus.emit("boss_anchor_lost", owner: "tracking_engine", battleID: battleID, payload: [
+                        "loss_duration": String(format: "%.2f", lossDuration),
+                        "reason": lastFailureReason
+                    ], errorFlag: true)
                 }
             } else {
                 trackingState = .search
@@ -872,7 +956,16 @@ final class RuntimeSessionViewModel: ObservableObject {
 
             portalOpenTask?.cancel()
             portalOpenTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 650_000_000)
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                await MainActor.run {
+                    guard let self else { return }
+                    self.bossAnimationState = .taunt
+                    self.battleMessage = "TAUNT"
+                    self.eventBus.emit("boss_intro_taunt", owner: "boss_engine", battleID: self.battleID, payload: [
+                        "boss_id": self.selectedBoss.id
+                    ])
+                }
+                try? await Task.sleep(nanoseconds: 750_000_000)
                 await MainActor.run {
                     guard let self else { return }
                     self.portalState = .open
@@ -924,11 +1017,15 @@ final class RuntimeSessionViewModel: ObservableObject {
     }
 
     private func applyHit(kind: RuntimeHitKind, source: String, sourceConfidence: Double, normalizedLocation: CGPoint) {
+        guard battlePhase == .active else { return }
         guard hitIgnoreUntil.map({ Date() >= $0 }) ?? true else { return }
-        guard combatState != .defeated else { return }
+        guard combatState != .defeated && combatState != .fatality else { return }
 
         lastHitDate = Date()
         lastDetectionObservation = nil
+        idleResetTask?.cancel()
+        idleResetTask = nil
+        idleResetGeneration += 1
 
         let baseDamage: Int
         switch kind {
@@ -960,21 +1057,48 @@ final class RuntimeSessionViewModel: ObservableObject {
         portalPulse = 1.0
         bossSwayPhase += 1.3
         bossBreathScale = 1.0 + (Double(baseDamage) * 0.01)
-        if kind == .critical {
-            bossAnimationState = .criticalHit
-        } else if comboCount > 1 {
-            bossAnimationState = .comboReaction
-        } else {
-            bossAnimationState = .hitReaction
+        switch kind {
+        case .critical:
+            bossAnimationState = .heavyHit
+            combatState = .heavyHit
+        case .heavy:
+            bossAnimationState = .knockdown
+            combatState = .knockdown
+        case .light, .normal:
+            if comboCount >= 5 {
+                bossAnimationState = .knockdown
+                combatState = .knockdown
+            } else {
+                bossAnimationState = .hit
+                combatState = .hit
+            }
         }
 
-        let text = kind.rawValue
+        let text: String
+        if kind == .critical {
+            text = "CRITICAL"
+        } else if comboCount >= 10 {
+            text = "COMBO x10"
+        } else if comboCount >= 5 {
+            text = "COMBO x5"
+        } else if comboCount >= 2 {
+            text = "COMBO x2"
+        } else {
+            text = "HIT"
+        }
         bossFloatTexts.append(RuntimeFloatingText(
-            text: "+\(baseDamage) \(text)",
+            text: "\(text)  -\(baseDamage)",
             colorHex: colorHex(for: kind),
             position: normalizedLocation,
             createdAt: Date(),
-            lifetime: 1.0
+            lifetime: 1.25
+        ))
+        bossFloatTexts.append(RuntimeFloatingText(
+            text: "\(baseDamage)",
+            colorHex: "#FFFFFF",
+            position: CGPoint(x: min(0.9, normalizedLocation.x + 0.08), y: min(0.9, normalizedLocation.y + 0.06)),
+            createdAt: Date(),
+            lifetime: 0.9
         ))
 
         if kind == .critical {
@@ -1022,8 +1146,20 @@ final class RuntimeSessionViewModel: ObservableObject {
                     "state": "PHASE2"
                 ])
             } else if combatState != .enraged {
-                combatState = .idle
-                bossAnimationState = .idle
+                let resetGeneration = idleResetGeneration
+                idleResetTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 420_000_000)
+                    await MainActor.run {
+                        guard let self,
+                              !Task.isCancelled,
+                              self.idleResetGeneration == resetGeneration,
+                              self.battlePhase == .active,
+                              self.combatState != .defeated,
+                              self.combatState != .fatality else { return }
+                        self.combatState = .idle
+                        self.bossAnimationState = .idle
+                    }
+                }
             }
         }
 
@@ -1033,14 +1169,17 @@ final class RuntimeSessionViewModel: ObservableObject {
     }
 
     private func handleBossDefeated() {
-        combatState = .defeated
-        bossAnimationState = .victory
+        idleResetTask?.cancel()
+        idleResetTask = nil
+        idleResetGeneration += 1
+        combatState = .fatality
+        bossAnimationState = .knockdown
         battlePhase = .victory
-        battleMessage = "FINISHER"
+        battleMessage = "FINISH HIM"
         portalState = .collapsing
         victoryOverlay = true
         rewardRevealVisible = false
-        defeatSequenceUntil = Date().addingTimeInterval(0.35)
+        defeatSequenceUntil = Date().addingTimeInterval(1.4)
         eventBus.emit("boss_defeated", owner: "combat_engine", battleID: battleID, payload: [
             "max_combo": "\(maxCombo)",
             "damage_done": "\(damageTotal)"
@@ -1050,18 +1189,23 @@ final class RuntimeSessionViewModel: ObservableObject {
 
         victoryTask?.cancel()
         victoryTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            try? await Task.sleep(nanoseconds: 900_000_000)
             await MainActor.run {
                 guard let self else { return }
-                self.bossAnimationState = .ko
-                self.battleMessage = "KO"
+                self.bossAnimationState = .death
+                self.combatState = .defeated
+                self.battleMessage = "FATALITY"
+                self.cameraShakeIntensity = 1.0
+                self.portalPulse = 1.0
             }
-            try? await Task.sleep(nanoseconds: 550_000_000)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             await MainActor.run {
                 guard let self else { return }
                 self.spawnLoot()
+                self.bossAnimationState = .victory
+                self.battleMessage = "VICTORY"
             }
-            try? await Task.sleep(nanoseconds: 900_000_000)
+            try? await Task.sleep(nanoseconds: 1_050_000_000)
             await MainActor.run {
                 guard let self else { return }
                 self.rewardRevealVisible = true
@@ -1069,6 +1213,9 @@ final class RuntimeSessionViewModel: ObservableObject {
                 self.battlePhase = .reward
                 self.portalState = .idle
                 self.victoryOverlay = false
+                self.cameraShakeIntensity = 0
+                self.portalPulse = 0
+                self.screenFlash = false
             }
         }
     }
@@ -1090,6 +1237,18 @@ final class RuntimeSessionViewModel: ObservableObject {
         inventory.append(item)
         try? saveStore.saveInventory(inventory)
         try? saveStore.saveReward(item)
+        if var profile = catProfile {
+            profile.level = max(1, profile.level)
+            profile.xp += 120
+            profile.wins += 1
+            while profile.xp >= profile.level * 240 {
+                profile.xp -= profile.level * 240
+                profile.level += 1
+            }
+            profile.updatedAt = Date()
+            catProfile = profile
+            try? saveStore.saveCatProfile(profile)
+        }
         eventBus.emit("loot_dropped", owner: "loot_engine", battleID: battleID, payload: [
             "item_id": item.id,
             "item_name": item.itemName,
@@ -1115,19 +1274,21 @@ final class RuntimeSessionViewModel: ObservableObject {
             case 0:
                 bossAnimationState = .idle
             case 1:
-                bossAnimationState = .lookAround
+                bossAnimationState = .taunt
             case 2:
                 bossAnimationState = .taunt
             default:
-                bossAnimationState = .attackPrep
+                bossAnimationState = .attack
             }
         } else if combatState == .enraged {
             bossAnimationState = .enraged
+        } else if combatState == .fatality {
+            bossAnimationState = .knockdown
         } else if combatState == .defeated {
             if let defeatSequenceUntil, now < defeatSequenceUntil {
-                bossAnimationState = .victory
+                bossAnimationState = .death
             } else {
-                bossAnimationState = .ko
+                bossAnimationState = .victory
             }
         }
 
@@ -1166,8 +1327,11 @@ final class RuntimeSessionViewModel: ObservableObject {
     private func cancelScheduledTasks() {
         portalOpenTask?.cancel()
         victoryTask?.cancel()
+        idleResetTask?.cancel()
+        idleResetGeneration += 1
         portalOpenTask = nil
         victoryTask = nil
+        idleResetTask = nil
     }
 
     private func permissionString(for status: AVAuthorizationStatus) -> String {

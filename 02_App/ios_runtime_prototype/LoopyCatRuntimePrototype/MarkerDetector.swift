@@ -16,7 +16,7 @@ final class RuntimeMarkerDetector {
     private(set) var referenceFeaturePrintError = "UNINITIALIZED"
 
     init() {
-        if let referenceURL = RuntimeMediaLibrary.resourceURL(named: "canonical_marker") {
+        if let referenceURL = RuntimeMediaLibrary.resourceURL(named: "loopycat_arc_marker") ?? RuntimeMediaLibrary.resourceURL(named: "canonical_marker") {
             referenceMarkerLoaded = true
             referenceMarkerPath = referenceURL.path
             guard let referenceImage = UIImage(contentsOfFile: referenceURL.path)?.cgImage else {

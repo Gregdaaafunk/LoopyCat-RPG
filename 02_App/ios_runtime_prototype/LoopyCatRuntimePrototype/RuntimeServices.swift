@@ -158,6 +158,21 @@ enum RuntimeMediaLibrary {
 
     static func resourceURL(named resourceName: String) -> URL? {
         guard let bundleURL = Bundle.main.resourceURL else { return nil }
+        let assetSubdirectories = ["Asset/Full", "Asset/Portrait", "Asset/Effects", "Asset/Amimation", "Asset/body", "03_AR/ARC"]
+        let extensions = ["png", "jpg", "jpeg"]
+
+        for subdirectory in assetSubdirectories {
+            for fileExtension in extensions {
+                let candidate = bundleURL
+                    .appendingPathComponent(subdirectory, isDirectory: true)
+                    .appendingPathComponent(resourceName)
+                    .appendingPathExtension(fileExtension)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate
+                }
+            }
+        }
+
         let enumerator = FileManager.default.enumerator(at: bundleURL, includingPropertiesForKeys: nil)
         while let item = enumerator?.nextObject() as? URL {
             let baseName = item.deletingPathExtension().lastPathComponent

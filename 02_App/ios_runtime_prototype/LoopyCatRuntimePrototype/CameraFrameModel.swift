@@ -94,20 +94,29 @@ final class CameraFrameModel: NSObject, ObservableObject {
     func setZoomFactor(_ zoomFactor: CGFloat) {
         let clamped = max(1.0, zoomFactor)
         sessionQueue.async { [weak self] in
-            guard let self, let device = self.activeCameraDevice else { return }
-            let appliedZoom = max(1.0, min(clamped, device.activeFormat.videoMaxZoomFactor))
-            do {
-                try device.lockForConfiguration()
-                device.videoZoomFactor = appliedZoom
-                device.unlockForConfiguration()
+            guard let self else { return }
+            if let appliedZoom = self.applyZoomFactor(clamped) {
                 DispatchQueue.main.async {
                     self.currentZoomFactor = appliedZoom
                 }
-            } catch {
-                DispatchQueue.main.async {
-                    self.lastError = error.localizedDescription
-                }
             }
+        }
+    }
+
+    @discardableResult
+    private func applyZoomFactor(_ zoomFactor: CGFloat) -> CGFloat? {
+        guard let device = activeCameraDevice else { return nil }
+        let appliedZoom = max(1.0, min(zoomFactor, device.activeFormat.videoMaxZoomFactor))
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = appliedZoom
+            device.unlockForConfiguration()
+            return appliedZoom
+        } catch {
+            DispatchQueue.main.async {
+                self.lastError = error.localizedDescription
+            }
+            return nil
         }
     }
 
@@ -131,9 +140,11 @@ final class CameraFrameModel: NSObject, ObservableObject {
             if !self.session.isRunning {
                 self.session.startRunning()
             }
+            self.applyZoomFactor(1.0)
 
             DispatchQueue.main.async {
                 self.status = "CAMERA_RUNNING"
+                self.currentZoomFactor = 1.0
             }
         }
     }
@@ -174,6 +185,12 @@ final class CameraFrameModel: NSObject, ObservableObject {
         do {
             try camera.lockForConfiguration()
             camera.videoZoomFactor = 1.0
+            if camera.isFocusModeSupported(.continuousAutoFocus) {
+                camera.focusMode = .continuousAutoFocus
+            }
+            if camera.isExposureModeSupported(.continuousAutoExposure) {
+                camera.exposureMode = .continuousAutoExposure
+            }
             camera.unlockForConfiguration()
             DispatchQueue.main.async {
                 self.currentZoomFactor = 1.0

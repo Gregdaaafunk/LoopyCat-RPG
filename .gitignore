@@ -9,3 +9,6 @@ CLAUDE_REVIEW.md
 *.mobileprovision
 *.cer
 *.cert
+
+# Local source marker cache; curated markers are committed under 03_AR/ARC/.
+/ARC/

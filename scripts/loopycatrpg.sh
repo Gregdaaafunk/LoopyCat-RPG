@@ -42,8 +42,15 @@ verify_context_files() {
 }
 
 verify_github_connectivity() {
-  git -C "$repo_root" remote get-url origin >/dev/null 2>&1 || fail "Missing git remote named origin"
-  git -C "$repo_root" ls-remote --exit-code origin HEAD >/dev/null 2>&1 || fail "GitHub origin is not reachable"
+  git -C "$repo_root" remote get-url origin >/dev/null 2>&1 || {
+    printf '%s\n' "WARNING: Missing git remote named origin"
+    return 0
+  }
+  git -C "$repo_root" ls-remote --exit-code origin HEAD >/dev/null 2>&1 || {
+    printf '%s\n' "WARNING: GitHub origin is not reachable; HQ will show GitHub: ERROR"
+    return 0
+  }
+  printf '%s\n' "GitHub origin reachable."
 }
 
 verify_terminal_available() {
@@ -53,7 +60,7 @@ verify_terminal_available() {
 
   command -v xfce4-terminal >/dev/null 2>&1 && return
   command -v x-terminal-emulator >/dev/null 2>&1 && return
-  fail "A visible terminal emulator is required for Kolyan and Klavdia"
+  fail "A visible terminal emulator is required for Kolyan, Klavdia, and HQ"
 }
 
 verify_codex_available() {
@@ -86,6 +93,7 @@ print_context() {
   printf '%s\n' "  Matroskin: Strategy, architecture, systems design, product direction"
   printf '%s\n' "  Kolyan: Implementation engineer, coding, debugging, maintenance, GitHub operations, TestFlight deployment"
   printf '%s\n' "  Klavdia: Reviewer, architecture auditor, SwiftUI auditor, quality gate, risk auditor"
+  printf '%s\n' "  HQ: Operations dashboard, live project health, launcher/review/git/network visibility"
   printf '%s\n' "  Klavdia permissions: no push, no deploy, no GitHub write, no secrets"
   printf '\n'
   printf '%s\n' "Workflow: Kolyan implements, Klavdia reviews, fixes repeat until APPROVED."
@@ -121,3 +129,4 @@ fi
 
 open_terminal "Kolyan - LoopyCat-RPG" "exec scripts/kolyan-session.sh"
 open_terminal "Klavdia Live" "exec scripts/klavdia-live.sh"
+open_terminal "LoopyCat RPG HQ" "exec scripts/hq-dashboard.sh"

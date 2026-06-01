@@ -72,7 +72,7 @@ struct CatOnboardingView: View {
                     Button {
                         runtime.loadCurrentCameraFrameAsCatPhoto()
                     } label: {
-                        Label("USE CAMERA", systemImage: "camera.fill")
+                        Label("CAPTURE CAT", systemImage: "camera.fill")
                             .buttonStyle()
                     }
 
@@ -120,7 +120,7 @@ struct CatOnboardingView: View {
                     .disabled(runtime.catDraftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || runtime.catDraftTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
 
-                Text(runtime.lastError.isEmpty ? "Fill the card, save locally, then fight." : runtime.lastError)
+                Text(runtime.lastError.isEmpty ? "Center your cat, move closer, keep the face inside frame, then capture." : runtime.lastError)
                     .font(.caption.monospaced())
                     .foregroundStyle(.white.opacity(0.8))
                     .padding(.top, 4)
@@ -200,6 +200,14 @@ struct CatOnboardingView: View {
         .frame(width: 110, height: 110)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.25), lineWidth: 1))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(.yellow.opacity(0.75), style: StrokeStyle(lineWidth: 2, dash: [10, 6]))
+                .padding(10)
+            Image(systemName: "viewfinder")
+                .font(.system(size: 42, weight: .light))
+                .foregroundStyle(.white.opacity(0.75))
+        }
     }
 }
 
@@ -320,7 +328,7 @@ struct VSScreenView: View {
                 LinearGradient(colors: [.black, .red.opacity(0.85), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
                     .ignoresSafeArea()
 
-                TimelineView(.animation) { timeline in
+                TimelineView(.periodic(from: Date(), by: 1.0 / 30.0)) { timeline in
                     let time = timeline.date.timeIntervalSinceReferenceDate
                     let pulse = 1.0 + sin(time * 3.5) * 0.05
                     let smash = abs(sin(time * 5.0)) * 0.03
@@ -346,7 +354,7 @@ struct VSScreenView: View {
                         introCard(
                             title: runtime.selectedBoss.displayName.uppercased(),
                             subtitle: runtime.selectedBoss.subtitle.uppercased(),
-                            image: runtime.bossImage(),
+                            image: runtime.bossPortraitImage(),
                             accent: Color(hex: runtime.selectedBoss.accentHex) ?? .purple,
                             side: .trailing,
                             bossMode: true
@@ -448,28 +456,49 @@ struct BattleSceneCompositionView: View {
     }
 
     private var battleBackground: some View {
-        LinearGradient(colors: [.black, .indigo.opacity(0.55), .purple.opacity(0.35), .black], startPoint: .top, endPoint: .bottom)
+        LinearGradient(colors: [.black, .brown.opacity(0.55), .purple.opacity(0.35), .black], startPoint: .top, endPoint: .bottom)
     }
 
     private func portalLayer(in size: CGSize) -> some View {
         let anchor = runtime.anchorMemory
         let point = anchor.map { screenPoint(from: CGPoint(x: $0.x, y: $0.y), in: size) } ?? CGPoint(x: size.width * 0.5, y: size.height * 0.56)
-        return TimelineView(.animation) { timeline in
+        return TimelineView(.periodic(from: Date(), by: 1.0 / 30.0)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             let pulse = 1.0 + sin(time * 4.0) * 0.04 + runtime.portalPulse * 0.2
             let ringRotation = Angle.degrees(time * 90.0)
             ZStack {
+                ForEach(0..<18, id: \.self) { index in
+                    let angle = Double(index) / 18.0 * .pi * 2.0 + time * 1.8
+                    let radius = 58.0 + sin(time * 3.0 + Double(index)) * 24.0 + runtime.portalPulse * 44.0
+                    Circle()
+                        .fill(index.isMultiple(of: 3) ? .yellow.opacity(0.9) : .orange.opacity(0.65))
+                        .frame(width: 5 + CGFloat(index % 4), height: 5 + CGFloat(index % 4))
+                        .offset(x: cos(angle) * radius, y: sin(angle) * radius * 0.58)
+                        .blur(radius: index.isMultiple(of: 4) ? 1.8 : 0)
+                }
                 Circle()
-                    .stroke(.cyan.opacity(0.9), lineWidth: 4)
+                    .stroke(.yellow.opacity(0.9), lineWidth: 4)
                     .frame(width: 154 * pulse, height: 154 * pulse)
                 Circle()
-                    .stroke(.purple.opacity(0.7), style: StrokeStyle(lineWidth: 8, dash: [12, 10]))
+                    .stroke(.orange.opacity(0.75), style: StrokeStyle(lineWidth: 8, dash: [12, 10]))
                     .frame(width: 198 * pulse, height: 198 * pulse)
                     .rotationEffect(ringRotation)
                 Circle()
-                    .fill(.purple.opacity(0.15))
+                    .stroke(.white.opacity(0.42), style: StrokeStyle(lineWidth: 2, dash: [4, 12]))
+                    .frame(width: 242 * pulse, height: 118 * pulse)
+                    .rotationEffect(.degrees(-time * 70.0))
+                Circle()
+                    .fill(.yellow.opacity(0.16 + runtime.portalPulse * 0.22))
                     .frame(width: 120 * pulse, height: 120 * pulse)
-                    .blur(radius: 6)
+                    .blur(radius: 10)
+                if runtime.portalState == .collapsing || runtime.portalPulse > 0.2 {
+                    Image(uiImage: runtime.bossEffectImage(at: time))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 260 * pulse, height: 190 * pulse)
+                        .blendMode(.screen)
+                        .opacity(0.55)
+                }
                 Text(runtime.battleMessage)
                     .font(.caption.monospaced().bold())
                     .foregroundStyle(.yellow)
@@ -484,15 +513,16 @@ struct BattleSceneCompositionView: View {
         let anchor = runtime.anchorMemory
         let point = anchor.map { screenPoint(from: CGPoint(x: $0.x, y: $0.y), in: size) } ?? CGPoint(x: size.width * 0.5, y: size.height * 0.58)
         let bossScale = max(0.72, min(1.45, (anchor?.scale ?? 0.28) * 2.0))
-        return TimelineView(.animation) { timeline in
+        return TimelineView(.periodic(from: Date(), by: 1.0 / 30.0)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             let sway = sin(time * 2.3 + runtime.bossSwayPhase) * 6.0
             let bob = cos(time * 1.8 + runtime.bossSwayPhase) * 4.0
-            let baseScale = bossScale * runtime.bossBreathScale * (runtime.bossAnimationState == .spawn ? 0.92 + min(0.2, runtime.portalPulse * 0.18) : 1.0)
-            BossArtworkView(runtime: runtime)
+            let spawnLift = runtime.bossAnimationState == .spawn ? 42.0 - min(42.0, time.truncatingRemainder(dividingBy: 1.2) * 36.0) : 0.0
+            let baseScale = bossScale * runtime.bossBreathScale * (runtime.bossAnimationState == .spawn ? 0.70 + min(0.35, runtime.portalPulse * 0.25) : 1.0)
+            BossArtworkView(runtime: runtime, time: time)
                 .scaleEffect(baseScale)
                 .rotationEffect(.degrees(Double(sway) * 0.5))
-                .offset(x: runtime.bossLookOffset.x + sway, y: runtime.bossLookOffset.y + bob)
+                .offset(x: runtime.bossLookOffset.x + sway, y: runtime.bossLookOffset.y + bob + spawnLift)
                 .shadow(color: Color(hex: runtime.selectedBoss.accentHex)?.opacity(0.9) ?? .purple.opacity(0.7), radius: 24)
                 .position(x: point.x, y: point.y - 12)
                 .opacity(runtime.anchorActive || runtime.bossAnimationState == .spawn ? 1.0 : 0.25)
@@ -503,8 +533,9 @@ struct BattleSceneCompositionView: View {
         ZStack {
             if runtime.markerFound {
                 let rect = markerRect(in: size, normalized: runtime.markerBoundingBox)
+                markerReaction(at: CGPoint(x: rect.midX, y: rect.midY), size: max(rect.width, rect.height))
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(.green.opacity(0.95), lineWidth: 3)
+                    .stroke(.yellow.opacity(0.95), lineWidth: 3)
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
                 if includeDebug {
@@ -527,6 +558,31 @@ struct BattleSceneCompositionView: View {
             }
         }
         .allowsHitTesting(false)
+    }
+
+    private func markerReaction(at point: CGPoint, size: CGFloat) -> some View {
+        TimelineView(.periodic(from: Date(), by: 1.0 / 30.0)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            let pulse = 1.0 + runtime.portalPulse * 0.6 + abs(sin(time * 8.0)) * 0.08
+            ZStack {
+                Circle()
+                    .stroke(.yellow.opacity(0.75), lineWidth: 3)
+                    .frame(width: size * 1.25 * pulse, height: size * 1.25 * pulse)
+                Circle()
+                    .stroke(.orange.opacity(0.5), style: StrokeStyle(lineWidth: 2, dash: [6, 10]))
+                    .frame(width: size * 1.75 * pulse, height: size * 1.75 * pulse)
+                    .rotationEffect(.degrees(time * 120))
+                ForEach(0..<10, id: \.self) { index in
+                    Rectangle()
+                        .fill(.white.opacity(0.55))
+                        .frame(width: 2, height: size * 0.38)
+                        .offset(y: -size * 0.48 * pulse)
+                        .rotationEffect(.degrees(Double(index) * 36 + time * 80))
+                }
+            }
+            .position(point)
+            .offset(x: runtime.cameraShakeIntensity * 8.0, y: runtime.cameraShakeIntensity * -5.0)
+        }
     }
 
     private func floatingDamageLayer(in size: CGSize) -> some View {
@@ -616,10 +672,6 @@ struct BattleSceneCompositionView: View {
         VStack {
             Spacer()
             VStack(spacing: 10) {
-                if includeDebug {
-                    RuntimeDebugPanelCard(runtime: runtime)
-                        .frame(maxHeight: 260)
-                }
                 LazyVGrid(
                     columns: [
                         GridItem(.flexible(), spacing: 8),
@@ -627,19 +679,11 @@ struct BattleSceneCompositionView: View {
                     ],
                     spacing: 8
                 ) {
+                    button(title: "STRIKE", systemImage: "pawprint.fill", color: .orange) {
+                        runtime.playerAttack()
+                    }
                     button(title: "PHOTO", systemImage: "camera.fill", color: .yellow) {
                         capturePhoto()
-                    }
-                    button(title: "REC N/I", systemImage: "record.circle", color: .gray) {
-                        runtime.eventBus.emit("record_pressed", owner: "ui_engine", battleID: runtime.battleID, payload: [
-                            "mode": "COMPOSED_OUTPUT"
-                        ])
-                        runtime.recStateText = "REC_NOT_IMPLEMENTED"
-                        runtime.recordingState = .failed
-                        runtime.lastError = "REC capture is not implemented in this MVP."
-                        runtime.eventBus.emit("record_not_implemented", owner: "recording_engine", battleID: runtime.battleID, payload: [
-                            "mode": "REC"
-                        ], errorFlag: true)
                     }
                     button(title: "RESET", systemImage: "arrow.counterclockwise", color: .red) {
                         runtime.resetBattle()
@@ -668,18 +712,26 @@ struct BattleSceneCompositionView: View {
     private var victoryLayer: some View {
         VStack {
             Spacer()
-            Text("KO")
-                .font(.system(size: 90, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
+            if let cat = runtime.currentCatPhoto() {
+                Image(uiImage: cat)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 150, height: 150)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: .yellow.opacity(0.8), radius: 20)
+            }
+            Text(runtime.battleMessage == "VICTORY" ? "VICTORY" : "FINISH HIM")
+                .font(.system(size: runtime.battleMessage == "VICTORY" ? 72 : 54, weight: .black, design: .rounded))
+                .foregroundStyle(runtime.battleMessage == "VICTORY" ? .yellow : .white)
                 .shadow(color: .red.opacity(0.9), radius: 18)
-            Text("FINISHER")
+            Text(runtime.battleMessage)
                 .font(.headline.monospaced().bold())
-                .foregroundStyle(.yellow)
+                .foregroundStyle(.white.opacity(0.9))
                 .padding(.top, 4)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.25))
+        .background(Color.black.opacity(runtime.battleMessage == "FINISH HIM" ? 0.62 : 0.35))
     }
 
     private var rewardRevealLayer: some View {
@@ -802,37 +854,38 @@ struct CameraLayerView: View {
 
 struct BossArtworkView: View {
     @ObservedObject var runtime: RuntimeSessionViewModel
+    let time: TimeInterval
 
     var body: some View {
         Group {
-            if let image = runtime.bossImage() {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 340, maxHeight: 420)
-                    .overlay(alignment: .bottom) {
-                        Text(runtime.selectedBoss.displayName.uppercased())
-                            .font(.caption.monospaced().bold())
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(.black.opacity(0.65))
-                            .clipShape(Capsule())
-                            .foregroundStyle(.white)
-                            .offset(y: 24)
+            Image(uiImage: runtime.bossAnimationImage(at: time))
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 340, maxHeight: 420)
+                .overlay(alignment: .bottom) {
+                    Text(runtime.selectedBoss.displayName.uppercased())
+                        .font(.caption.monospaced().bold())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(.black.opacity(0.65))
+                        .clipShape(Capsule())
+                        .foregroundStyle(.white)
+                        .offset(y: 24)
+                }
+                .overlay {
+                    if runtime.bossAnimationState == .enraged {
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(.purple.opacity(0.9), lineWidth: 8)
+                            .blur(radius: 1.5)
                     }
-                    .overlay {
-                        if runtime.bossAnimationState == .enraged {
-                            RoundedRectangle(cornerRadius: 20)
-                                .stroke(.purple.opacity(0.9), lineWidth: 8)
-                                .blur(radius: 1.5)
-                        }
+                    if runtime.bossAnimationState == .death {
+                        Image(uiImage: runtime.bossEffectImage(at: time))
+                            .resizable()
+                            .scaledToFit()
+                            .blendMode(.screen)
+                            .opacity(0.8)
                     }
-            } else {
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(.white.opacity(0.08))
-                    .frame(width: 300, height: 380)
-                    .overlay(Text(runtime.selectedBoss.displayName).foregroundStyle(.white))
-            }
+                }
         }
     }
 }
@@ -1267,9 +1320,25 @@ struct RewardScreenView: View {
             LinearGradient(colors: [.black, .purple.opacity(0.85), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
             VStack(spacing: 18) {
-                Text("REWARD")
+                Text("VICTORY")
                     .font(.largeTitle.bold())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.yellow)
+                if let cat = runtime.currentCatPhoto() {
+                    Image(uiImage: cat)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 136, height: 136)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.yellow.opacity(0.7), lineWidth: 2))
+                }
+                VStack(spacing: 4) {
+                    Text((runtime.catProfile?.name ?? "LOOPYCAT").uppercased())
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                    Text("+120 XP  •  \(runtime.currentLoot?.rarity.rawValue ?? "LOOT") DROP")
+                        .font(.caption.monospaced().bold())
+                        .foregroundStyle(.white.opacity(0.82))
+                }
                 if let loot = runtime.currentLoot {
                     RewardCardView(runtime: runtime, loot: loot)
                         .padding(.horizontal, 14)

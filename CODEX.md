@@ -11,12 +11,22 @@ Use Klavdia through Claude Code for stronger architecture review, quality contro
 ## Startup Workflow
 
 - Use `loopycatrpg` to restore the Kolyan implementation session.
-- The launcher starts at `/home/gregdafunk/Downloads/LoopyCat-RPG`, verifies the repository and `.git`, prints git status, verifies GitHub connectivity, loads `AI_TEAM.md`, `CODEX.md`, `CLAUDE.md`, and `PROJECT_CONTEXT.md`, and opens a live Klavdia terminal in parallel.
+- The launcher starts at `/home/gregdafunk/Downloads/LoopyCat-RPG`, verifies the repository and `.git`, prints git status, verifies GitHub connectivity, loads `AI_TEAM.md`, `CODEX.md`, `CLAUDE.md`, and `PROJECT_CONTEXT.md`, and opens Kolyan, live Klavdia, and HQ terminals in parallel.
 - The Kolyan terminal uses `gpt-5.5` by default.
+- Kolyan startup requires writable Git metadata. The launcher must use `--sandbox danger-full-access`. The older `--sandbox workspace-write` mode can mount `.git` read-only and block staging, commits, approval verification, and deployment gates.
+- After startup, the first Git write check must be `touch .git/.write-test && rm .git/.write-test`. If that fails, stop immediately and fix Git write access first. Do not debug gameplay, Klavdia, review logic, or deployment until `.git` is writable.
+
+## HQ Dashboard
+
+`scripts/hq-dashboard.sh` is the permanent operations dashboard launched by `loopycatrpg`.
+
+HQ auto-refreshes and reports Kolyan status, current model, Klavdia status, current review status, Git state, GitHub connectivity, internet connectivity, repository validity, `.git` writability, last commit, current branch, pending change count, launcher health, review pipeline health, and current timestamp.
 
 ## Autonomous Mode
 
 Default assumption: proceed automatically without asking for confirmation on normal implementation work.
+
+Kolyan must run with writable Git metadata. The `loopycatrpg` launcher starts Kolyan with `--sandbox danger-full-access` because the Codex `workspace-write` sandbox can bind-mount `.git` read-only, which blocks `git add`, `git rm --cached`, `git commit`, review approval verification, and deployment gates. This does not grant push or TestFlight authority; push/deploy still require explicit owner approval and a fresh Klavdia APPROVED state.
 
 Allowed without asking:
 

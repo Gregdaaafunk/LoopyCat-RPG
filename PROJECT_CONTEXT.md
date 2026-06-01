@@ -56,9 +56,20 @@ LoopyCat-RPG
 ## Startup Workflow
 
 - `loopycatrpg` is the only official startup command for the full environment.
-- It opens `/home/gregdafunk/Downloads/LoopyCat-RPG`, verifies the repository and `.git`, prints git status, verifies GitHub connectivity, loads `AI_TEAM.md`, `CODEX.md`, `CLAUDE.md`, and `PROJECT_CONTEXT.md`, starts Kolyan with `gpt-5.5` by default, and opens a separate visible live Klavdia terminal.
+- It opens `/home/gregdafunk/Downloads/LoopyCat-RPG`, verifies the repository and `.git`, prints git status, verifies GitHub connectivity, loads `AI_TEAM.md`, `CODEX.md`, `CLAUDE.md`, and `PROJECT_CONTEXT.md`, starts Kolyan with `gpt-5.5` by default, opens a separate visible live Klavdia terminal, and opens the permanent HQ operations dashboard.
 - The workflow repeats review cycles until Klavdia returns `APPROVED` for the latest code state.
 - If code changes after approval, the approval is invalid and a fresh review is mandatory.
+- Kolyan is launched with writable Git metadata. The launcher uses Codex `--sandbox danger-full-access` because `workspace-write` can mount `.git` read-only and prevent staging, commits, approval verification, push, and TestFlight gates. This is a local repository write-access requirement only; push and deploy still require explicit owner approval and a current Klavdia APPROVED report.
+- Startup verification must include `touch .git/.write-test && rm .git/.write-test`. If that check fails, stop immediately. Treat the failure as a Codex sandbox / mount problem, not a gameplay, Klavdia, or deployment problem.
+- This Git-write requirement is permanent institutional knowledge for LoopyCat-RPG sessions.
+
+## HQ Operations Dashboard
+
+- HQ entrypoint: `scripts/hq-dashboard.sh`
+- Launched automatically by `loopycatrpg` as the third permanent terminal.
+- Auto-refreshes every 15 seconds by default.
+- Displays Kolyan, current model, Klavdia, current review, Git, GitHub, internet, repository, `.git`, last commit, current branch, pending changes, launcher, review pipeline, and timestamp status.
+- Makes `.git` read-only state, network/GitHub failure, launcher failure, review pipeline failure, and Klavdia review errors visible without asking Kolyan or Klavdia.
 
 ## Current Architecture Summary
 

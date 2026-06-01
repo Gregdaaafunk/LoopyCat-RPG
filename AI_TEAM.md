@@ -20,6 +20,12 @@ Responsible for coding, debugging, maintenance, builds, GitHub operations, and T
 
 Reviewer, architecture auditor, quality gate, risk auditor.
 
+## HQ
+
+Permanent operations dashboard launched by `loopycatrpg`.
+
+Shows Kolyan, Klavdia, review, Git, GitHub, internet, repository, `.git`, launcher, review-pipeline, branch, commit, pending-change, and timestamp health.
+
 ## Klavdia Permissions
 
 - no push authority
@@ -52,6 +58,7 @@ If Klavdia returns NEEDS_FIXES or REJECTED:
 ## Startup Commands
 
 - `loopycatrpg` starts the Kolyan implementation terminal, restores the project workflow, and opens live Klavdia review.
+- `loopycatrpg` also opens the permanent HQ operations dashboard.
 - `loopycatrpg` is the only official startup command for the full environment.
 
 ## Review Rule

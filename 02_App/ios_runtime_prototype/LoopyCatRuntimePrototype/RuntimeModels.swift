@@ -23,27 +23,28 @@ enum RuntimeTrackingState: String, Codable {
 enum RuntimeCombatState: String, Codable {
     case spawn = "SPAWN"
     case idle = "IDLE"
+    case attack = "ATTACK"
     case hit = "HIT"
+    case heavyHit = "HEAVY_HIT"
+    case knockdown = "KNOCKDOWN"
     case phase2 = "PHASE2"
     case enraged = "ENRAGED"
+    case fatality = "FATALITY"
     case defeated = "DEFEATED"
 }
 
-enum RuntimeBossAnimationState: String, Codable {
+enum RuntimeBossAnimationState: String, Codable, CaseIterable {
     case spawn = "SPAWN"
     case idle = "IDLE"
-    case lookAround = "LOOK_AROUND"
     case taunt = "TAUNT"
-    case attackPrep = "ATTACK_PREP"
     case attack = "ATTACK"
-    case hitReaction = "HIT_REACTION"
-    case comboReaction = "COMBO_REACTION"
-    case criticalHit = "CRITICAL_HIT"
+    case hit = "HIT"
+    case heavyHit = "HEAVY_HIT"
+    case knockdown = "KNOCKDOWN"
     case phase2 = "PHASE_2"
     case enraged = "ENRAGED"
     case victory = "VICTORY"
-    case ko = "KO"
-    case defeated = "DEFEATED"
+    case death = "DEATH"
     case loot = "LOOT"
 }
 
@@ -129,6 +130,7 @@ struct RuntimeBossDefinition: Identifiable, Codable, Hashable {
     var id: String
     var displayName: String
     var sheetResource: String
+    var portraitResource: String = ""
     var accentHex: String
     var subtitle: String
     var lootSetName: String
@@ -218,6 +220,7 @@ struct RuntimeDiagnosticsSnapshot: Codable {
     var launchOrientation: String
     var currentOrientation: String
     var orientationChanges: [String]
+    var cameraZoomFactor: Double
     var cameraPermission: String
     var photosPermission: String
     var cameraStarted: Bool
@@ -234,6 +237,7 @@ struct RuntimeDiagnosticsSnapshot: Codable {
     var lastDetectorFrameTimestamp: Date?
     var markerCandidateCount: Int
     var markerFoundCount: Int
+    var markerCurrentFound: Bool
     var lastMarkerConfidence: Double
     var lastMarkerTimestamp: Date?
     var referenceMarkerLoaded: Bool
@@ -241,6 +245,7 @@ struct RuntimeDiagnosticsSnapshot: Codable {
     var referenceFeaturePrintReady: Bool
     var referenceFeaturePrintError: String
     var trackingState: String
+    var trackingLossReason: String
     var trackingLastSeenAge: Double
     var anchorActive: Bool
     var anchorAge: Double
@@ -337,23 +342,67 @@ extension CGRect {
 }
 
 enum RuntimeAssetCatalog {
+    static let fallbackBossFrame = "full_boss_1"
+
     static let bossDefinitions: [RuntimeBossDefinition] = [
-        RuntimeBossDefinition(id: "boss01", displayName: "Boss 01", sheetResource: "boss01_raw_sheet", accentHex: "#D95CFF", subtitle: "Prototype Menace", lootSetName: "toy_emperor"),
-        RuntimeBossDefinition(id: "boss02", displayName: "Boss 02", sheetResource: "boss02_raw_sheet", accentHex: "#FF8A3D", subtitle: "Prototype Menace", lootSetName: "chaos_hunter"),
-        RuntimeBossDefinition(id: "boss03", displayName: "Boss 03", sheetResource: "boss03_raw_sheet", accentHex: "#4CC9F0", subtitle: "Prototype Menace", lootSetName: "spirit_walker"),
-        RuntimeBossDefinition(id: "boss04", displayName: "Boss 04", sheetResource: "boss04_raw_sheet", accentHex: "#F9C74F", subtitle: "Prototype Menace", lootSetName: "nature_guardian"),
-        RuntimeBossDefinition(id: "boss05", displayName: "Boss 05", sheetResource: "boss05_raw_sheet", accentHex: "#90BE6D", subtitle: "Prototype Menace", lootSetName: "toy_emperor"),
-        RuntimeBossDefinition(id: "boss06", displayName: "Boss 06", sheetResource: "boss06_raw_sheet", accentHex: "#F15BB5", subtitle: "Prototype Menace", lootSetName: "chaos_hunter"),
-        RuntimeBossDefinition(id: "boss07", displayName: "Spring Clown", sheetResource: "boss07_raw_sheet", accentHex: "#E85D04", subtitle: "Festival Nightmare", lootSetName: "spirit_walker"),
-        RuntimeBossDefinition(id: "boss08", displayName: "Boss 08", sheetResource: "boss08_raw_sheet", accentHex: "#2EC4B6", subtitle: "Prototype Menace", lootSetName: "nature_guardian"),
-        RuntimeBossDefinition(id: "boss09", displayName: "Boss 09", sheetResource: "boss09_raw_sheet", accentHex: "#8338EC", subtitle: "Prototype Menace", lootSetName: "toy_emperor"),
-        RuntimeBossDefinition(id: "boss10", displayName: "Boss 10", sheetResource: "boss10_raw_sheet", accentHex: "#FF006E", subtitle: "Prototype Menace", lootSetName: "chaos_hunter")
+        RuntimeBossDefinition(id: "djinn01", displayName: "Marker Djinn", sheetResource: "full_boss_1", portraitResource: "Portrait_dead_1", accentHex: "#FFD166", subtitle: "Ancient Artifact Spirit", lootSetName: "arcane_regalia")
     ]
 
     static let lootDefinitions: [RuntimeLootItem] = [
-        RuntimeLootItem(id: "toy_emperor_crown", itemName: "Toy Emperor Crown", rarity: .legendary, setName: "Toy Emperor", slot: .head, sourceBossID: "boss01", imageResource: "toy_emperor_raw_sheet", obtainedAt: Date(), equipped: false),
-        RuntimeLootItem(id: "chaos_hunter_aura", itemName: "Chaos Hunter Aura", rarity: .epic, setName: "Chaos Hunter", slot: .aura, sourceBossID: "boss02", imageResource: "chaos_hunter_raw_sheet", obtainedAt: Date(), equipped: false),
-        RuntimeLootItem(id: "spirit_walker_tail", itemName: "Spirit Walker Tail", rarity: .rare, setName: "Spirit Walker", slot: .tail, sourceBossID: "boss03", imageResource: "spirit_walker_raw_sheet", obtainedAt: Date(), equipped: false),
-        RuntimeLootItem(id: "nature_guardian_neck", itemName: "Nature Guardian Collar", rarity: .common, setName: "Nature Guardian", slot: .neck, sourceBossID: "boss04", imageResource: "nature_guardian_raw_sheet", obtainedAt: Date(), equipped: false)
+        RuntimeLootItem(id: "arcane_collar", itemName: "Arcane Collar", rarity: .legendary, setName: "Arcane Regalia", slot: .neck, sourceBossID: "djinn01", imageResource: "Body_armor", obtainedAt: Date(), equipped: false),
+        RuntimeLootItem(id: "golden_medal", itemName: "Golden Medal", rarity: .epic, setName: "Arcane Regalia", slot: .special, sourceBossID: "djinn01", imageResource: "Icon", obtainedAt: Date(), equipped: false),
+        RuntimeLootItem(id: "spirit_aura", itemName: "Spirit Aura", rarity: .rare, setName: "Arcane Regalia", slot: .aura, sourceBossID: "djinn01", imageResource: "Dissolve_3", obtainedAt: Date(), equipped: false),
+        RuntimeLootItem(id: "battle_armor", itemName: "Battle Armor", rarity: .common, setName: "Arcane Regalia", slot: .head, sourceBossID: "djinn01", imageResource: "Head", obtainedAt: Date(), equipped: false)
     ]
+
+    static let idleFrames = ["1", "2", "3", "Loon", "Pertralt"]
+    static let spawnFrames = ["spawn4", "Entaaed", "Body_2", "Body_armor", "Head", "Left_arm", "Right_arm", "full_boss_1"]
+    static let attackFrames = ["Entaaed", "Loon", "Pertralt", "spawn4"]
+    static let hitFrames = ["Hit_1", "Hit_2", "Hit_3", "Hit_4", "Hit_5"]
+    static let heavyHitFrames = ["Heavy_Hit_1", "Heavy_Hit_2", "Heavy_Hit_3", "Heavy_Hit_4", "Heavy_Hit_5"]
+    static let knockdownFrames = ["Knockdown_1", "Knockdown_2", "Knockdown_3", "Knockdown_4", "Knockdown_5"]
+    static let deathFrames = ["Death_1", "Death_2", "Death_3", "Death_4", "Death_5"]
+    static let victoryFrames = ["Portrait_dead_1", "Portrait_dead_2", "Portrait_dead_3", "Portrait_dead_4", "Portrait_dead_5"]
+    static let dissolveFrames = ["Dissolve_1", "Dissolve_2", "Dissolve_3", "Dissolve_4", "Dissolve_5"]
+
+    static var animationFrameValidationFailures: [String] {
+        RuntimeBossAnimationState.allCases.compactMap { state in
+            animationFrames(for: state).isEmpty ? state.rawValue : nil
+        }
+    }
+
+    static func animationFrames(for state: RuntimeBossAnimationState) -> [String] {
+        switch state {
+        case .spawn:
+            return spawnFrames
+        case .attack:
+            return attackFrames
+        case .hit:
+            return hitFrames
+        case .heavyHit:
+            return heavyHitFrames
+        case .knockdown:
+            return knockdownFrames
+        case .phase2, .enraged:
+            return heavyHitFrames + idleFrames
+        case .death:
+            return deathFrames
+        case .victory, .loot:
+            return victoryFrames
+        case .taunt:
+            return ["Entaaed", "Pertralt", "Loon"]
+        case .idle:
+            return idleFrames
+        }
+    }
+
+    static func frameName(for state: RuntimeBossAnimationState, time: TimeInterval) -> String {
+        let frames = animationFrames(for: state)
+        guard !frames.isEmpty else {
+            return fallbackBossFrame
+        }
+        let fps = state == .idle ? 3.0 : 8.0
+        let index = Int(time * fps) % frames.count
+        return frames[index]
+    }
 }

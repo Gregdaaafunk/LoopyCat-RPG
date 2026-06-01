@@ -10,6 +10,8 @@ targets:
       - LoopyCatRuntimePrototype
     resources:
       - ../../03_AR/canonical_marker.jpg
+      - ../../03_AR/ARC
+      - ../../Asset
       - ../../04_Content/Bosses/raw_sheets
       - ../../04_Content/Loot/raw_sheets
     info:
