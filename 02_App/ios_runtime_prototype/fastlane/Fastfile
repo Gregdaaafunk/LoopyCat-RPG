@@ -54,31 +54,28 @@ def verify_ipa_info_plist_orientations(ipa_path)
 end
 
 def create_distribution_certificate(api_key, team_id, keychain_path, keychain_password, signing_directory)
-  get_certificates(
-    api_key: api_key,
-    team_id: team_id,
-    development: false,
-    generate_apple_certs: true,
-    force: false,
-    output_path: signing_directory,
-    keychain_path: keychain_path,
-    keychain_password: keychain_password
-  )
-rescue => error
-  raise unless error.message.include?("maximum number of available Distribution certificates")
+  max_revoke_attempts = ENV.fetch("DISTRIBUTION_CERT_REVOKE_RETRY_LIMIT", "3").to_i
+  revoke_attempts = 0
 
-  revoke_newest_distribution_certificate
+  begin
+    get_certificates(
+      api_key: api_key,
+      team_id: team_id,
+      development: false,
+      generate_apple_certs: true,
+      force: false,
+      output_path: signing_directory,
+      keychain_path: keychain_path,
+      keychain_password: keychain_password
+    )
+  rescue => error
+    raise unless error.message.include?("maximum number of available Distribution certificates")
+    raise if revoke_attempts >= max_revoke_attempts
 
-  get_certificates(
-    api_key: api_key,
-    team_id: team_id,
-    development: false,
-    generate_apple_certs: true,
-    force: false,
-    output_path: signing_directory,
-    keychain_path: keychain_path,
-    keychain_password: keychain_password
-  )
+    revoke_attempts += 1
+    revoke_newest_distribution_certificate
+    retry
+  end
 end
 
 def revoke_newest_distribution_certificate
