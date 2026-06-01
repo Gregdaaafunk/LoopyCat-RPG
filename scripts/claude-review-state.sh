@@ -62,8 +62,14 @@ current_content_id() {
   {
     content_files | while IFS= read -r file; do
       [ -n "$file" ] || continue
-      [ -e "$file" ] || continue
-      printf 'F %s %s %s\n' "$(worktree_mode "$file")" "$(git hash-object --no-filters -- "$file")" "$file"
+      if git ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
+        git ls-files -s -- "$file" | while read -r mode object stage indexed_file; do
+          [ -n "$indexed_file" ] || continue
+          printf 'F %s %s %s\n' "$mode" "$object" "$indexed_file"
+        done
+      elif [ -e "$file" ]; then
+        printf 'F %s %s %s\n' "$(worktree_mode "$file")" "$(git hash-object --no-filters -- "$file")" "$file"
+      fi
     done
   } | hash_stream
 }
