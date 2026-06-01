@@ -1,11 +1,11 @@
 APPROVED
 
-Review ID: 20260601T080619Z-0d983c2
-Timestamp: 2026-06-01T08:06:19Z
-Repository State ID: 9b121d4380f43c6407b1b09dc5b974e988fd463f7a10783866ee87f6d2ca7694
-Approved Tree ID: 097080e4fea971ae183d21e8a29a798553e4425af24405539af7c20b67f739c1
+Review ID: 20260601T081224Z-f813fc3
+Timestamp: 2026-06-01T08:12:24Z
+Repository State ID: 4780b5518c0dc25c80f987fac02e727922a118e6776ab87caef44c33c6b2b461
+Approved Tree ID: 1d88bc092db6da7752ad22bc34e46e5c2797122e9c97611c49ebe318c14fbfb6
 Claude Exit Code: 0
-Claude Attempts: 1/5
+Claude Attempts: 2/5
 Changed Files:
 - scripts/claude-review-state.sh
 
@@ -16,7 +16,17 @@ Critical Fixes:
 - None
 
 Improvement Suggestions:
-- Consider adding a comment above the `git ls-files --error-unmatch` check explaining that we prioritize indexed content over worktree content to ensure review matches what will be committed. This makes the intent clearer for future maintainers.
+- None
 
 Deployment Risks:
-- This change modifies how content IDs are calculated. All existing Klavdia review approvals will be invalidated after this change is deployed, requiring fresh reviews. This is the correct behavior (ensures reviews match the new calculation method), but operators should expect existing approvals to become invalid. The change improves accuracy by using staged/indexed content rather than worktree content, preventing mismatches where reviewed content differs from committed content.
+- None
+
+---
+
+**Review Summary**
+
+This change adds `export LC_ALL=C` to ensure deterministic locale-independent behavior in the review state script. This is a standard practice for scripts that compute hashes or perform sorting operations that must produce identical results across different systems (macOS, Linux, etc.).
+
+The placement is correct (early in the script, before any locale-dependent operations), and the scope is appropriate (exported for child processes). This aligns with the recent commit "Make review state hash cross-platform" and strengthens cross-platform consistency.
+
+No blocking issues, no deployment risks. The change is minimal, focused, and improves reliability.

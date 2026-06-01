@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
+export LC_ALL=C
 
 report_path="${CLAUDE_REVIEW_REPORT:-CLAUDE_REVIEW.md}"
 
