@@ -68,6 +68,10 @@ if [ "$current_state" != "$approved_state" ]; then
   echo "Claude review verification failed: repository state changed after Klavdia APPROVED." >&2
   echo "Approved state: $approved_state" >&2
   echo "Current state:  $current_state" >&2
+  echo "Git status:" >&2
+  git status --short >&2 || true
+  echo "Review changed files:" >&2
+  "$state_script" changed-files | sed 's/^/- /' >&2 || true
   print_final_report "ERROR" "Run: scripts/klavdia-review.sh"
   exit 1
 fi
